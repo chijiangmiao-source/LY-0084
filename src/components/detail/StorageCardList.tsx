@@ -32,7 +32,11 @@ export const StorageCardList = component$<StorageCardListProps>(({ projectId, pr
 
     newCardLabel.value = '';
     showAddForm.value = false;
-    cards.value = cardStorage.getByProjectId(projectId);
+    const updatedCards = cardStorage.getByProjectId(projectId);
+    cards.value = updatedCards;
+
+    projectStorage.update(projectId, { cardCount: updatedCards.length });
+
     onUpdate$();
   });
 
@@ -58,7 +62,10 @@ export const StorageCardList = component$<StorageCardListProps>(({ projectId, pr
     cards.value = remainingCards;
 
     const recoveredCount = remainingCards.filter((c) => c.isRecovered).length;
-    projectStorage.update(projectId, { recoveredCount });
+    projectStorage.update(projectId, {
+      cardCount: remainingCards.length,
+      recoveredCount,
+    });
     onUpdate$();
   });
 

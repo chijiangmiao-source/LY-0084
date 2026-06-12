@@ -8,7 +8,7 @@ export function calculateStatistics(projects: WeddingProject[]): ProjectStatisti
       (p) => p.handoverStatus === 'backing_up' || p.handoverStatus === 'recovering'
     ).length,
     completed: projects.filter(
-      (p) => p.handoverStatus === 'completed' || p.handoverStatus === 'handed_over'
+      (p) => p.handoverStatus === 'completed' || p.handoverStatus === 'handed_over' || p.handoverStatus === 'editing'
     ).length,
     anomaly: projects.filter((p) => p.handoverStatus === 'anomaly').length,
   };
@@ -65,6 +65,7 @@ export function getStatusChartData(projects: WeddingProject[]): {
     backing_up: { label: '备份中', color: '#F59E0B', count: 0 },
     backed_up: { label: '备份完成', color: '#10B981', count: 0 },
     handed_over: { label: '已交接', color: '#D4AF37', count: 0 },
+    editing: { label: '待剪辑', color: '#A855F7', count: 0 },
     completed: { label: '已完成', color: '#2F4F4F', count: 0 },
     anomaly: { label: '异常', color: '#722F37', count: 0 },
   };

@@ -136,6 +136,33 @@ export const cardStorage = {
     const filtered = cards.filter((c) => c.projectId !== projectId);
     safeSet(STORAGE_KEYS.cards, filtered);
   },
+
+  adjustExcessRecovered(projectId: string, maxAllowed: number): number {
+    const cards = this.getAll();
+    const projectCards = cards.filter((c) => c.projectId === projectId && c.isRecovered);
+    
+    if (projectCards.length <= maxAllowed) {
+      return projectCards.length;
+    }
+    
+    const excessCount = projectCards.length - maxAllowed;
+    const sortedCards = [...projectCards].sort((a, b) => {
+      const dateA = a.recoveredAt ? new Date(a.recoveredAt).getTime() : 0;
+      const dateB = b.recoveredAt ? new Date(b.recoveredAt).getTime() : 0;
+      return dateA - dateB;
+    });
+    
+    for (let i = 0; i < excessCount; i++) {
+      const card = sortedCards[i];
+      const index = cards.findIndex((c) => c.id === card.id);
+      if (index !== -1) {
+        cards[index] = { ...cards[index], isRecovered: false, recoveredAt: null };
+      }
+    }
+    
+    safeSet(STORAGE_KEYS.cards, cards);
+    return maxAllowed;
+  },
 };
 
 export const backupStorage = {
@@ -179,6 +206,33 @@ export const backupStorage = {
     const backups = this.getAll();
     const filtered = backups.filter((b) => b.projectId !== projectId);
     safeSet(STORAGE_KEYS.backups, filtered);
+  },
+
+  adjustExcessCompleted(projectId: string, maxAllowed: number): number {
+    const backups = this.getAll();
+    const projectBackups = backups.filter((b) => b.projectId === projectId && b.isCompleted);
+    
+    if (projectBackups.length <= maxAllowed) {
+      return projectBackups.length;
+    }
+    
+    const excessCount = projectBackups.length - maxAllowed;
+    const sortedBackups = [...projectBackups].sort((a, b) => {
+      const dateA = a.completedAt ? new Date(a.completedAt).getTime() : 0;
+      const dateB = b.completedAt ? new Date(b.completedAt).getTime() : 0;
+      return dateA - dateB;
+    });
+    
+    for (let i = 0; i < excessCount; i++) {
+      const backup = sortedBackups[i];
+      const index = backups.findIndex((b) => b.id === backup.id);
+      if (index !== -1) {
+        backups[index] = { ...backups[index], isCompleted: false, completedAt: null };
+      }
+    }
+    
+    safeSet(STORAGE_KEYS.backups, backups);
+    return maxAllowed;
   },
 };
 

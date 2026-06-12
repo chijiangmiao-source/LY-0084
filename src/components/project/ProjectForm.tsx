@@ -2,13 +2,13 @@ import { component$, useSignal, $, useVisibleTask$ } from '@builder.io/qwik';
 import { Link, useNavigate } from '@builder.io/qwik-city';
 import type { HandoverStatus, ProjectFormData } from '~/types/project';
 import { HANDOVER_STATUS_LABELS } from '~/types/project';
-import { projectStorage, statusLogStorage } from '~/utils/storage';
+import { projectStorage, statusLogStorage, cardStorage, backupStorage } from '~/utils/storage';
 import { validateProjectForm } from '~/utils/validators';
 import { getTodayDateString } from '~/utils/dateUtils';
 
 interface ProjectFormProps {
   mode: 'create' | 'edit';
-  initialData?: ProjectFormData & { id?: string };
+  initialData?: ProjectFormData & { id?: string; recoveredCount?: number; backupCount?: number };
 }
 
 function runValidation(
@@ -25,11 +25,15 @@ function runValidation(
   options: {
     isEdit: boolean;
     currentId?: string;
+    currentRecoveredCount?: number;
+    currentBackupCount?: number;
   }
 ) {
   return validateProjectForm(values, {
     isEdit: options.isEdit,
     currentId: options.currentId,
+    currentRecoveredCount: options.currentRecoveredCount,
+    currentBackupCount: options.currentBackupCount,
     isNumberExists: (num, excludeId) => projectStorage.isNumberExists(num, excludeId),
   });
 }
@@ -49,7 +53,14 @@ export const ProjectForm = component$<ProjectFormProps>(({ mode, initialData }) 
   const errors = useSignal<Record<string, string>>({});
   const isSubmitting = useSignal(false);
 
-  const statusOptions = Object.entries(HANDOVER_STATUS_LABELS) as [HandoverStatus, string][];
+  const DISALLOWED_STATUSES: HandoverStatus[] = ['handed_over', 'editing', 'completed'];
+  const statusOptions = (Object.entries(HANDOVER_STATUS_LABELS) as [HandoverStatus, string][])
+    .filter(([value]) => {
+      if (mode === 'edit' && initialData?.handoverStatus === value) {
+        return true;
+      }
+      return !DISALLOWED_STATUSES.includes(value);
+    });
 
   const handleSubmit = $(async (e: Event) => {
     e.preventDefault();
@@ -69,6 +80,8 @@ export const ProjectForm = component$<ProjectFormProps>(({ mode, initialData }) 
       {
         isEdit: mode === 'edit',
         currentId: initialData?.id,
+        currentRecoveredCount: initialData?.recoveredCount,
+        currentBackupCount: initialData?.backupCount,
       }
     );
     errors.value = result.errors;
@@ -102,13 +115,28 @@ export const ProjectForm = component$<ProjectFormProps>(({ mode, initialData }) 
 
         navigate('/');
       } else if (initialData?.id) {
+        const existingProject = projectStorage.getById(initialData.id);
+        const newCardCount = cardCount.value;
+        
+        let adjustedRecoveredCount = existingProject?.recoveredCount || 0;
+        let adjustedBackupCount = existingProject?.backupCount || 0;
+        
+        if (existingProject && newCardCount < adjustedRecoveredCount) {
+          adjustedRecoveredCount = cardStorage.adjustExcessRecovered(initialData.id, newCardCount);
+        }
+        if (existingProject && newCardCount < adjustedBackupCount) {
+          adjustedBackupCount = backupStorage.adjustExcessCompleted(initialData.id, newCardCount);
+        }
+        
         const updated = projectStorage.update(initialData.id, {
           projectNumber: projectNumber.value.trim(),
           coupleName: coupleName.value.trim(),
           weddingDate: weddingDate.value,
           photographer: photographer.value.trim(),
           videographer: videographer.value.trim(),
-          cardCount: cardCount.value,
+          cardCount: newCardCount,
+          recoveredCount: adjustedRecoveredCount,
+          backupCount: adjustedBackupCount,
           handoverStatus: handoverStatus.value,
           anomalyNote: anomalyNote.value.trim(),
         });
@@ -183,7 +211,7 @@ export const ProjectForm = component$<ProjectFormProps>(({ mode, initialData }) 
                         handoverStatus: handoverStatus.value,
                         anomalyNote: anomalyNote.value,
                       },
-                      { isEdit: mode === 'edit', currentId: initialData?.id }
+                      { isEdit: mode === 'edit', currentId: initialData?.id, currentRecoveredCount: initialData?.recoveredCount, currentBackupCount: initialData?.backupCount }
                     );
                     errors.value = result.errors;
                   }}
@@ -224,7 +252,7 @@ export const ProjectForm = component$<ProjectFormProps>(({ mode, initialData }) 
                         handoverStatus: handoverStatus.value,
                         anomalyNote: anomalyNote.value,
                       },
-                      { isEdit: mode === 'edit', currentId: initialData?.id }
+                      { isEdit: mode === 'edit', currentId: initialData?.id, currentRecoveredCount: initialData?.recoveredCount, currentBackupCount: initialData?.backupCount }
                     );
                     errors.value = result.errors;
                   }}
@@ -266,7 +294,7 @@ export const ProjectForm = component$<ProjectFormProps>(({ mode, initialData }) 
                         handoverStatus: handoverStatus.value,
                         anomalyNote: anomalyNote.value,
                       },
-                      { isEdit: mode === 'edit', currentId: initialData?.id }
+                      { isEdit: mode === 'edit', currentId: initialData?.id, currentRecoveredCount: initialData?.recoveredCount, currentBackupCount: initialData?.backupCount }
                     );
                     errors.value = result.errors;
                   }}
@@ -307,7 +335,7 @@ export const ProjectForm = component$<ProjectFormProps>(({ mode, initialData }) 
                         handoverStatus: handoverStatus.value,
                         anomalyNote: anomalyNote.value,
                       },
-                      { isEdit: mode === 'edit', currentId: initialData?.id }
+                      { isEdit: mode === 'edit', currentId: initialData?.id, currentRecoveredCount: initialData?.recoveredCount, currentBackupCount: initialData?.backupCount }
                     );
                     errors.value = result.errors;
                   }}
@@ -389,7 +417,7 @@ export const ProjectForm = component$<ProjectFormProps>(({ mode, initialData }) 
                         handoverStatus: handoverStatus.value,
                         anomalyNote: anomalyNote.value,
                       },
-                      { isEdit: mode === 'edit', currentId: initialData?.id }
+                      { isEdit: mode === 'edit', currentId: initialData?.id, currentRecoveredCount: initialData?.recoveredCount, currentBackupCount: initialData?.backupCount }
                     );
                     errors.value = result.errors;
                   }}
@@ -435,7 +463,7 @@ export const ProjectForm = component$<ProjectFormProps>(({ mode, initialData }) 
                         handoverStatus: handoverStatus.value,
                         anomalyNote: anomalyNote.value,
                       },
-                      { isEdit: mode === 'edit', currentId: initialData?.id }
+                      { isEdit: mode === 'edit', currentId: initialData?.id, currentRecoveredCount: initialData?.recoveredCount, currentBackupCount: initialData?.backupCount }
                     );
                     errors.value = result.errors;
                   }}

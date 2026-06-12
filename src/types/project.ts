@@ -4,6 +4,7 @@ export type HandoverStatus =
   | 'backing_up'
   | 'backed_up'
   | 'handed_over'
+  | 'editing'
   | 'completed'
   | 'anomaly';
 
@@ -13,6 +14,7 @@ export const HANDOVER_STATUS_LABELS: Record<HandoverStatus, string> = {
   backing_up: '备份中',
   backed_up: '备份完成',
   handed_over: '已交接',
+  editing: '待剪辑',
   completed: '已完成',
   anomaly: '异常',
 };
@@ -23,6 +25,7 @@ export const HANDOVER_STATUS_COLORS: Record<HandoverStatus, string> = {
   backing_up: 'bg-yellow-100 text-yellow-700',
   backed_up: 'bg-green-100 text-green-600',
   handed_over: 'bg-champagne-100 text-champagne-700',
+  editing: 'bg-purple-100 text-purple-700',
   completed: 'bg-forest-100 text-forest-600',
   anomaly: 'bg-wine-100 text-wine-600',
 };
