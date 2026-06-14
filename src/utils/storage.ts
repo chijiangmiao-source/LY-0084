@@ -6,6 +6,7 @@ import type {
   StatusLog,
   ActivityLog,
   ActivityType,
+  HandoverTemplate,
 } from '~/types/project';
 
 const STORAGE_KEYS = {
@@ -15,6 +16,7 @@ const STORAGE_KEYS = {
   missings: 'wedding_missings',
   statusLogs: 'wedding_status_logs',
   activityLogs: 'wedding_activity_logs',
+  templates: 'wedding_templates',
 };
 
 function safeGet<T>(key: string, defaultValue: T): T {
@@ -363,4 +365,213 @@ export function logActivity(
     timestamp: new Date().toISOString(),
     operator,
   });
+}
+
+export const templateStorage = {
+  getAll(): HandoverTemplate[] {
+    return safeGet<HandoverTemplate[]>(STORAGE_KEYS.templates, []);
+  },
+
+  getById(id: string): HandoverTemplate | undefined {
+    const templates = this.getAll();
+    return templates.find((t) => t.id === id);
+  },
+
+  create(template: Omit<HandoverTemplate, 'id' | 'createdAt' | 'updatedAt'>): HandoverTemplate {
+    const templates = this.getAll();
+    const newTemplate: HandoverTemplate = {
+      ...template,
+      id: generateId(),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    if (newTemplate.isDefault) {
+      templates.forEach((t) => (t.isDefault = false));
+    }
+    templates.push(newTemplate);
+    safeSet(STORAGE_KEYS.templates, templates);
+    return newTemplate;
+  },
+
+  update(id: string, updates: Partial<HandoverTemplate>): HandoverTemplate | undefined {
+    const templates = this.getAll();
+    const index = templates.findIndex((t) => t.id === id);
+    if (index === -1) return undefined;
+    if (updates.isDefault) {
+      templates.forEach((t) => (t.isDefault = false));
+    }
+    templates[index] = {
+      ...templates[index],
+      ...updates,
+      updatedAt: new Date().toISOString(),
+    };
+    safeSet(STORAGE_KEYS.templates, templates);
+    return templates[index];
+  },
+
+  delete(id: string): boolean {
+    const templates = this.getAll();
+    const filtered = templates.filter((t) => t.id !== id);
+    if (filtered.length === templates.length) return false;
+    safeSet(STORAGE_KEYS.templates, filtered);
+    return true;
+  },
+
+  getDefault(): HandoverTemplate | undefined {
+    const templates = this.getAll();
+    return templates.find((t) => t.isDefault) || templates[0];
+  },
+
+  initDefaults(): HandoverTemplate[] {
+    const existing = this.getAll();
+    if (existing.length > 0) return existing;
+
+    const defaultTemplates: Omit<HandoverTemplate, 'id' | 'createdAt' | 'updatedAt'>[] = [
+      {
+        name: '常规婚礼',
+        description: '单机位标准婚礼跟拍交接清单',
+        icon: '💒',
+        isDefault: true,
+        storageCards: [
+          { cardLabel: 'A卡', deviceType: 'camera', deviceName: '主相机', capacity: '128GB' },
+          { cardLabel: 'B卡', deviceType: 'camera', deviceName: '主相机备卡', capacity: '128GB' },
+          { cardLabel: '录音卡', deviceType: 'audio', deviceName: '录音设备', capacity: '32GB' },
+        ],
+        backupLocations: [
+          { location: 'NAS存储', locationType: 'nas' },
+          { location: '移动硬盘A', locationType: 'external_hdd' },
+          { location: '移动硬盘B', locationType: 'external_hdd' },
+        ],
+        missingItems: [
+          { description: '核对新郎迎亲环节素材是否完整', severity: 'high' },
+          { description: '核对仪式全程素材是否完整', severity: 'high' },
+          { description: '核对敬酒环节素材是否完整', severity: 'medium' },
+        ],
+        handoverNote: '所有素材已完整回收\n已完成双备份校验\n等待客户确认交接',
+      },
+      {
+        name: '双机位婚礼',
+        description: '双摄影师双机位婚礼跟拍交接清单',
+        icon: '📸',
+        isDefault: false,
+        storageCards: [
+          { cardLabel: '主摄影师A卡', deviceType: 'camera', deviceName: '主相机', capacity: '128GB' },
+          { cardLabel: '主摄影师B卡', deviceType: 'camera', deviceName: '主相机备卡', capacity: '128GB' },
+          { cardLabel: '副摄影师A卡', deviceType: 'camera', deviceName: '副相机', capacity: '128GB' },
+          { cardLabel: '副摄影师B卡', deviceType: 'camera', deviceName: '副相机备卡', capacity: '128GB' },
+          { cardLabel: '录音卡1', deviceType: 'audio', deviceName: '主录音设备', capacity: '32GB' },
+          { cardLabel: '录音卡2', deviceType: 'audio', deviceName: '备录音设备', capacity: '32GB' },
+        ],
+        backupLocations: [
+          { location: 'NAS存储', locationType: 'nas' },
+          { location: '移动硬盘A', locationType: 'external_hdd' },
+          { location: '移动硬盘B', locationType: 'external_hdd' },
+          { location: '云端备份', locationType: 'cloud' },
+        ],
+        missingItems: [
+          { description: '核对主摄影师迎亲环节素材', severity: 'high' },
+          { description: '核对副摄影师迎亲环节素材', severity: 'high' },
+          { description: '核对主摄影师仪式全程素材', severity: 'high' },
+          { description: '核对副摄影师仪式全程素材', severity: 'high' },
+          { description: '核对双机位敬酒环节素材是否完整', severity: 'medium' },
+          { description: '核对录音设备双备份音频', severity: 'medium' },
+        ],
+        handoverNote: '双机位素材已完整回收\n已完成三备份（NAS+双硬盘+云端）\n请后期团队注意素材整理编号',
+      },
+      {
+        name: '含无人机婚礼',
+        description: '含无人机航拍的婚礼跟拍交接清单',
+        icon: '🚁',
+        isDefault: false,
+        storageCards: [
+          { cardLabel: '相机A卡', deviceType: 'camera', deviceName: '主相机', capacity: '128GB' },
+          { cardLabel: '相机B卡', deviceType: 'camera', deviceName: '主相机备卡', capacity: '128GB' },
+          { cardLabel: '无人机TF卡', deviceType: 'drone', deviceName: '航拍无人机', capacity: '64GB' },
+          { cardLabel: '录音卡', deviceType: 'audio', deviceName: '录音设备', capacity: '32GB' },
+        ],
+        backupLocations: [
+          { location: 'NAS存储', locationType: 'nas' },
+          { location: '移动硬盘A', locationType: 'external_hdd' },
+          { location: '移动硬盘B', locationType: 'external_hdd' },
+        ],
+        missingItems: [
+          { description: '核对迎亲航拍素材是否完整', severity: 'high' },
+          { description: '核对仪式航拍素材是否完整', severity: 'high' },
+          { description: '核对外景航拍素材是否完整', severity: 'medium' },
+          { description: '核对地面拍摄素材是否完整', severity: 'high' },
+          { description: '核对无人机电池及配件是否归还', severity: 'low' },
+        ],
+        handoverNote: '航拍+地面素材已完整回收\n航拍素材单独文件夹存放\n无人机电池已充电归还',
+      },
+    ];
+
+    const created: HandoverTemplate[] = [];
+    for (const tpl of defaultTemplates) {
+      created.push(this.create(tpl));
+    }
+    return created;
+  },
+};
+
+export function applyTemplateToProject(
+  templateId: string,
+  projectId: string
+): { cards: StorageCard[]; backups: BackupRecord[]; missings: MissingItem[] } {
+  const template = templateStorage.getById(templateId);
+  if (!template) {
+    return { cards: [], backups: [], missings: [] };
+  }
+
+  const createdCards: StorageCard[] = [];
+  const createdBackups: BackupRecord[] = [];
+  const createdMissings: MissingItem[] = [];
+
+  for (const card of template.storageCards) {
+    createdCards.push(
+      cardStorage.create({
+        projectId,
+        cardLabel: card.cardLabel,
+        deviceType: card.deviceType,
+        deviceName: card.deviceName,
+        capacity: card.capacity,
+        isRecovered: false,
+        recoveredAt: null,
+      })
+    );
+  }
+
+  for (const backup of template.backupLocations) {
+    createdBackups.push(
+      backupStorage.create({
+        projectId,
+        location: backup.location,
+        locationType: backup.locationType,
+        isCompleted: false,
+        completedAt: null,
+        startedAt: null,
+      })
+    );
+  }
+
+  for (const missing of template.missingItems) {
+    createdMissings.push(
+      missingStorage.create({
+        projectId,
+        description: missing.description,
+        severity: missing.severity,
+        isResolved: false,
+        resolution: '',
+      })
+    );
+  }
+
+  const project = projectStorage.getById(projectId);
+  if (project) {
+    projectStorage.update(projectId, {
+      handoverNote: template.handoverNote,
+      cardCount: createdCards.length,
+    });
+  }
+
+  return { cards: createdCards, backups: createdBackups, missings: createdMissings };
 }

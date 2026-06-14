@@ -200,3 +200,34 @@ export interface ProjectStatistics {
   completed: number;
   anomaly: number;
 }
+
+export interface TemplateStorageCard {
+  cardLabel: string;
+  deviceType: DeviceType;
+  deviceName: string;
+  capacity: string;
+}
+
+export interface TemplateBackupLocation {
+  location: string;
+  locationType: BackupRecord['locationType'];
+}
+
+export interface TemplateMissingItem {
+  description: string;
+  severity: MissingSeverity;
+}
+
+export interface HandoverTemplate {
+  id: string;
+  name: string;
+  description: string;
+  icon: string;
+  storageCards: TemplateStorageCard[];
+  backupLocations: TemplateBackupLocation[];
+  missingItems: TemplateMissingItem[];
+  handoverNote: string;
+  isDefault: boolean;
+  createdAt: string;
+  updatedAt: string;
+}

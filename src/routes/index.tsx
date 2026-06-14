@@ -120,10 +120,16 @@ export default component$(() => {
               <p class="text-xs text-gray-400">素材管理 · 安全可追溯</p>
             </div>
           </div>
-          <Link href="/project/new" class="btn-primary flex items-center gap-2 no-underline">
-            <span>+</span>
-            <span>新建项目</span>
-          </Link>
+          <div class="flex items-center gap-3">
+            <Link href="/templates" class="btn-secondary flex items-center gap-2 no-underline">
+              <span>📋</span>
+              <span>模板管理</span>
+            </Link>
+            <Link href="/project/new" class="btn-primary flex items-center gap-2 no-underline">
+              <span>+</span>
+              <span>新建项目</span>
+            </Link>
+          </div>
         </div>
       </header>
 
