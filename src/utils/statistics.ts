@@ -114,3 +114,34 @@ export function calculateRecoveryProgress(project: WeddingProject): number {
   if (project.cardCount === 0) return 0;
   return Math.round((project.recoveredCount / project.cardCount) * 100);
 }
+
+export function calculateAutoStatus(project: WeddingProject, cardCount: number, recoveredCount: number, backupCount: number): WeddingProject['handoverStatus'] {
+  if (project.handoverStatus === 'anomaly' || 
+      project.handoverStatus === 'editing' || 
+      project.handoverStatus === 'completed' ||
+      project.handoverStatus === 'handed_over') {
+    return project.handoverStatus;
+  }
+
+  if (cardCount === 0) {
+    return 'pending';
+  }
+
+  if (recoveredCount === 0 && backupCount === 0) {
+    return 'pending';
+  }
+
+  if (recoveredCount < cardCount) {
+    return 'recovering';
+  }
+
+  if (recoveredCount === cardCount && backupCount < cardCount) {
+    return 'backing_up';
+  }
+
+  if (recoveredCount === cardCount && backupCount >= cardCount) {
+    return 'backed_up';
+  }
+
+  return project.handoverStatus;
+}

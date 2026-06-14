@@ -412,7 +412,7 @@ export default component$(() => {
                   <HandoverNote projectId={projectId} project={p} onUpdate$={handleUpdate} />
                 </div>
                 <div>
-                  <MissingItems projectId={projectId} />
+                  <MissingItems projectId={projectId} onUpdate$={handleUpdate} />
                 </div>
               </div>
             )}

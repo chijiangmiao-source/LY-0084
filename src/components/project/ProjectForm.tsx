@@ -2,7 +2,7 @@ import { component$, useSignal, $, useVisibleTask$ } from '@builder.io/qwik';
 import { Link, useNavigate } from '@builder.io/qwik-city';
 import type { HandoverStatus, ProjectFormData } from '~/types/project';
 import { HANDOVER_STATUS_LABELS } from '~/types/project';
-import { projectStorage, statusLogStorage, cardStorage, backupStorage } from '~/utils/storage';
+import { projectStorage, statusLogStorage, cardStorage, backupStorage, logActivity } from '~/utils/storage';
 import { validateProjectForm } from '~/utils/validators';
 import { getTodayDateString } from '~/utils/dateUtils';
 
@@ -114,6 +114,21 @@ export const ProjectForm = component$<ProjectFormProps>(({ mode, initialData }) 
           timestamp: new Date().toISOString(),
         });
 
+        logActivity(
+          newProject.id,
+          'project_edit',
+          '创建新项目',
+          {
+            projectNumber: newProject.projectNumber,
+            coupleName: newProject.coupleName,
+            weddingDate: newProject.weddingDate,
+            photographer: newProject.photographer,
+            videographer: newProject.videographer,
+            cardCount: newProject.cardCount,
+            handoverStatus: newProject.handoverStatus,
+          }
+        );
+
         navigate('/');
       } else if (initialData?.id) {
         const existingProject = projectStorage.getById(initialData.id);
@@ -142,14 +157,65 @@ export const ProjectForm = component$<ProjectFormProps>(({ mode, initialData }) 
           anomalyNote: anomalyNote.value.trim(),
         });
 
-        if (updated && updated.handoverStatus !== initialData.handoverStatus) {
-          statusLogStorage.create({
-            projectId: initialData.id,
-            fromStatus: initialData.handoverStatus,
-            toStatus: handoverStatus.value,
-            remark: '状态变更',
-            timestamp: new Date().toISOString(),
-          });
+        if (updated) {
+          const changedFields: Record<string, { old: unknown; new: unknown }> = {};
+          const newProjectNumber = projectNumber.value.trim();
+          const newCoupleName = coupleName.value.trim();
+          const newPhotographer = photographer.value.trim();
+          const newVideographer = videographer.value.trim();
+          const newAnomalyNote = anomalyNote.value.trim();
+
+          if (newProjectNumber !== initialData.projectNumber) {
+            changedFields.projectNumber = { old: initialData.projectNumber, new: newProjectNumber };
+          }
+          if (newCoupleName !== initialData.coupleName) {
+            changedFields.coupleName = { old: initialData.coupleName, new: newCoupleName };
+          }
+          if (weddingDate.value !== initialData.weddingDate) {
+            changedFields.weddingDate = { old: initialData.weddingDate, new: weddingDate.value };
+          }
+          if (newPhotographer !== initialData.photographer) {
+            changedFields.photographer = { old: initialData.photographer, new: newPhotographer };
+          }
+          if (newVideographer !== initialData.videographer) {
+            changedFields.videographer = { old: initialData.videographer, new: newVideographer };
+          }
+          if (newCardCount !== initialData.cardCount) {
+            changedFields.cardCount = { old: initialData.cardCount, new: newCardCount };
+          }
+          if (newAnomalyNote !== initialData.anomalyNote) {
+            changedFields.anomalyNote = { old: initialData.anomalyNote, new: newAnomalyNote };
+          }
+
+          if (Object.keys(changedFields).length > 0) {
+            logActivity(
+              initialData.id,
+              'project_edit',
+              '编辑项目信息',
+              changedFields
+            );
+          }
+
+          if (updated.handoverStatus !== initialData.handoverStatus) {
+            statusLogStorage.create({
+              projectId: initialData.id,
+              fromStatus: initialData.handoverStatus,
+              toStatus: handoverStatus.value,
+              remark: '状态变更',
+              timestamp: new Date().toISOString(),
+            });
+
+            logActivity(
+              initialData.id,
+              'status_change',
+              `状态从 ${HANDOVER_STATUS_LABELS[initialData.handoverStatus]} 变更为 ${HANDOVER_STATUS_LABELS[handoverStatus.value]}`,
+              {
+                fromStatus: initialData.handoverStatus,
+                toStatus: handoverStatus.value,
+                remark: '编辑项目时变更状态',
+              }
+            );
+          }
         }
 
         navigate(`/project/${initialData.id}`);

@@ -1,8 +1,9 @@
 import { component$, useSignal, $, useVisibleTask$ } from '@builder.io/qwik';
 import type { BackupRecord, WeddingProject } from '~/types/project';
-import { BACKUP_LOCATION_TYPE_LABELS, BACKUP_LOCATION_TYPE_ICONS } from '~/types/project';
+import { BACKUP_LOCATION_TYPE_LABELS, BACKUP_LOCATION_TYPE_ICONS, HANDOVER_STATUS_LABELS } from '~/types/project';
 import { backupStorage, projectStorage, logActivity } from '~/utils/storage';
 import { formatDateTime } from '~/utils/dateUtils';
+import { calculateAutoStatus } from '~/utils/statistics';
 
 interface BackupStatusProps {
   projectId: string;
@@ -51,7 +52,33 @@ export const BackupStatus = component$<BackupStatusProps>(({ projectId, project,
 
     newLocation.value = '';
     showAddForm.value = false;
-    backups.value = backupStorage.getByProjectId(projectId);
+    const updatedBackups = backupStorage.getByProjectId(projectId);
+    backups.value = updatedBackups;
+
+    const completedCount = updatedBackups.filter((b) => b.isCompleted).length;
+    const autoStatus = calculateAutoStatus(project, project.cardCount, project.recoveredCount, completedCount);
+    
+    const updates: Partial<WeddingProject> = {
+      backupCount: completedCount,
+    };
+
+    if (autoStatus !== project.handoverStatus) {
+      updates.handoverStatus = autoStatus;
+      logActivity(
+        projectId,
+        'status_change',
+        `状态从 ${HANDOVER_STATUS_LABELS[project.handoverStatus]} 变更为 ${HANDOVER_STATUS_LABELS[autoStatus]}`,
+        {
+          fromStatus: project.handoverStatus,
+          toStatus: autoStatus,
+          remark: '添加备份后自动更新状态',
+        }
+      );
+    }
+
+    projectStorage.update(projectId, updates);
+
+    onUpdate$();
   });
 
   const toggleComplete = $((backupId: string, currentValue: boolean, location: string) => {
@@ -68,7 +95,28 @@ export const BackupStatus = component$<BackupStatusProps>(({ projectId, project,
     const completedCount = updatedBackups.filter((b) =>
       b.id === backupId ? !currentValue : b.isCompleted
     ).length;
-    projectStorage.update(projectId, { backupCount: completedCount });
+    
+    const autoStatus = calculateAutoStatus(project, project.cardCount, project.recoveredCount, completedCount);
+    
+    const updates: Partial<WeddingProject> = {
+      backupCount: completedCount,
+    };
+
+    if (autoStatus !== project.handoverStatus) {
+      updates.handoverStatus = autoStatus;
+      logActivity(
+        projectId,
+        'status_change',
+        `状态从 ${HANDOVER_STATUS_LABELS[project.handoverStatus]} 变更为 ${HANDOVER_STATUS_LABELS[autoStatus]}`,
+        {
+          fromStatus: project.handoverStatus,
+          toStatus: autoStatus,
+          remark: !currentValue ? '标记备份完成后自动更新状态' : '取消备份完成后自动更新状态',
+        }
+      );
+    }
+
+    projectStorage.update(projectId, updates);
 
     logActivity(
       projectId,
@@ -111,6 +159,8 @@ export const BackupStatus = component$<BackupStatusProps>(({ projectId, project,
         verifyStatus: newVerifyStatus,
       }
     );
+
+    onUpdate$();
   });
 
   const toggleExpand = $((backupId: string) => {
@@ -159,6 +209,7 @@ export const BackupStatus = component$<BackupStatusProps>(({ projectId, project,
     }
 
     cancelEdit();
+    onUpdate$();
   });
 
   const deleteBackup = $((backupId: string, location: string) => {
@@ -168,7 +219,28 @@ export const BackupStatus = component$<BackupStatusProps>(({ projectId, project,
     backups.value = remaining;
 
     const completedCount = remaining.filter((b) => b.isCompleted).length;
-    projectStorage.update(projectId, { backupCount: completedCount });
+    
+    const autoStatus = calculateAutoStatus(project, project.cardCount, project.recoveredCount, completedCount);
+    
+    const updates: Partial<WeddingProject> = {
+      backupCount: completedCount,
+    };
+
+    if (autoStatus !== project.handoverStatus) {
+      updates.handoverStatus = autoStatus;
+      logActivity(
+        projectId,
+        'status_change',
+        `状态从 ${HANDOVER_STATUS_LABELS[project.handoverStatus]} 变更为 ${HANDOVER_STATUS_LABELS[autoStatus]}`,
+        {
+          fromStatus: project.handoverStatus,
+          toStatus: autoStatus,
+          remark: '删除备份后自动更新状态',
+        }
+      );
+    }
+
+    projectStorage.update(projectId, updates);
 
     logActivity(
       projectId,

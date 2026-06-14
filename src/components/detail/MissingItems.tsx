@@ -6,9 +6,10 @@ import { formatDate } from '~/utils/dateUtils';
 
 interface MissingItemsProps {
   projectId: string;
+  onUpdate$: () => void;
 }
 
-export const MissingItems = component$<MissingItemsProps>(({ projectId }) => {
+export const MissingItems = component$<MissingItemsProps>(({ projectId, onUpdate$ }) => {
   const items = useSignal<MissingItem[]>([]);
   const newDescription = useSignal('');
   const newSeverity = useSignal<MissingSeverity>('medium');
@@ -48,6 +49,8 @@ export const MissingItems = component$<MissingItemsProps>(({ projectId }) => {
     items.value = missingStorage.getByProjectId(projectId).sort((a, b) =>
       new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     );
+
+    onUpdate$();
   });
 
   const toggleResolved = $((itemId: string, currentValue: boolean, description: string) => {
@@ -70,6 +73,8 @@ export const MissingItems = component$<MissingItemsProps>(({ projectId }) => {
         isResolved: !currentValue,
       }
     );
+
+    onUpdate$();
   });
 
   const updateResolution = $((itemId: string, resolution: string) => {
@@ -77,6 +82,8 @@ export const MissingItems = component$<MissingItemsProps>(({ projectId }) => {
     items.value = missingStorage.getByProjectId(projectId).sort((a, b) =>
       new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     );
+
+    onUpdate$();
   });
 
   const deleteItem = $((itemId: string, description: string) => {
@@ -95,6 +102,8 @@ export const MissingItems = component$<MissingItemsProps>(({ projectId }) => {
         description,
       }
     );
+
+    onUpdate$();
   });
 
   const severityColors: Record<MissingSeverity, string> = {

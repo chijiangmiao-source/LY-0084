@@ -3,6 +3,8 @@ import type { StorageCard, WeddingProject, DeviceType } from '~/types/project';
 import { DEVICE_TYPE_LABELS, DEVICE_TYPE_ICONS } from '~/types/project';
 import { cardStorage, projectStorage, logActivity } from '~/utils/storage';
 import { formatDateTime } from '~/utils/dateUtils';
+import { calculateAutoStatus } from '~/utils/statistics';
+import { HANDOVER_STATUS_LABELS } from '~/types/project';
 
 interface StorageCardListProps {
   projectId: string;
@@ -61,7 +63,30 @@ export const StorageCardList = component$<StorageCardListProps>(({ projectId, pr
     const updatedCards = cardStorage.getByProjectId(projectId);
     cards.value = updatedCards;
 
-    projectStorage.update(projectId, { cardCount: updatedCards.length });
+    const recoveredCount = updatedCards.filter((c) => c.isRecovered).length;
+    const newCardCount = updatedCards.length;
+    const autoStatus = calculateAutoStatus(project, newCardCount, recoveredCount, project.backupCount);
+    
+    const updates: Partial<WeddingProject> = {
+      cardCount: newCardCount,
+      recoveredCount,
+    };
+
+    if (autoStatus !== project.handoverStatus) {
+      updates.handoverStatus = autoStatus;
+      logActivity(
+        projectId,
+        'status_change',
+        `状态从 ${HANDOVER_STATUS_LABELS[project.handoverStatus]} 变更为 ${HANDOVER_STATUS_LABELS[autoStatus]}`,
+        {
+          fromStatus: project.handoverStatus,
+          toStatus: autoStatus,
+          remark: '添加存储卡后自动更新状态',
+        }
+      );
+    }
+
+    projectStorage.update(projectId, updates);
 
     onUpdate$();
   });
@@ -77,7 +102,28 @@ export const StorageCardList = component$<StorageCardListProps>(({ projectId, pr
     const recoveredCount = updatedCards.filter((c) =>
       c.id === cardId ? !currentValue : c.isRecovered
     ).length;
-    projectStorage.update(projectId, { recoveredCount });
+    
+    const autoStatus = calculateAutoStatus(project, updatedCards.length, recoveredCount, project.backupCount);
+    
+    const updates: Partial<WeddingProject> = {
+      recoveredCount,
+    };
+
+    if (autoStatus !== project.handoverStatus) {
+      updates.handoverStatus = autoStatus;
+      logActivity(
+        projectId,
+        'status_change',
+        `状态从 ${HANDOVER_STATUS_LABELS[project.handoverStatus]} 变更为 ${HANDOVER_STATUS_LABELS[autoStatus]}`,
+        {
+          fromStatus: project.handoverStatus,
+          toStatus: autoStatus,
+          remark: !currentValue ? '回收存储卡后自动更新状态' : '取消回收后自动更新状态',
+        }
+      );
+    }
+
+    projectStorage.update(projectId, updates);
 
     logActivity(
       projectId,
@@ -147,6 +193,7 @@ export const StorageCardList = component$<StorageCardListProps>(({ projectId, pr
     }
 
     cancelEdit();
+    onUpdate$();
   });
 
   const deleteCard = $(async (cardId: string, cardLabel: string) => {
@@ -155,11 +202,31 @@ export const StorageCardList = component$<StorageCardListProps>(({ projectId, pr
     const remainingCards = cardStorage.getByProjectId(projectId);
     cards.value = remainingCards;
 
+    const newCardCount = remainingCards.length;
     const recoveredCount = remainingCards.filter((c) => c.isRecovered).length;
-    projectStorage.update(projectId, {
-      cardCount: remainingCards.length,
+    
+    const autoStatus = calculateAutoStatus(project, newCardCount, recoveredCount, project.backupCount);
+    
+    const updates: Partial<WeddingProject> = {
+      cardCount: newCardCount,
       recoveredCount,
-    });
+    };
+
+    if (autoStatus !== project.handoverStatus) {
+      updates.handoverStatus = autoStatus;
+      logActivity(
+        projectId,
+        'status_change',
+        `状态从 ${HANDOVER_STATUS_LABELS[project.handoverStatus]} 变更为 ${HANDOVER_STATUS_LABELS[autoStatus]}`,
+        {
+          fromStatus: project.handoverStatus,
+          toStatus: autoStatus,
+          remark: '删除存储卡后自动更新状态',
+        }
+      );
+    }
+
+    projectStorage.update(projectId, updates);
 
     logActivity(
       projectId,
