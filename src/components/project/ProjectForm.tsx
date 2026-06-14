@@ -78,6 +78,21 @@ export const ProjectForm = component$<ProjectFormProps>(({ mode, initialData }) 
       const defaultTemplate = templateStorage.getDefault();
       if (defaultTemplate) {
         selectedTemplateId.value = defaultTemplate.id;
+        cardCount.value = defaultTemplate.storageCards.length;
+      }
+    }
+  });
+
+  const handleSelectTemplate = $((templateId: string) => {
+    selectedTemplateId.value = templateId;
+    showTemplatePreview.value = true;
+    if (templateId) {
+      const template = templates.value.find((t) => t.id === templateId);
+      if (template) {
+        cardCount.value = template.storageCards.length;
+        if (errors.value.cardCount) {
+          errors.value = { ...errors.value, cardCount: '' };
+        }
       }
     }
   });
@@ -133,6 +148,7 @@ export const ProjectForm = component$<ProjectFormProps>(({ mode, initialData }) 
           handoverStatus: handoverStatus.value,
           anomalyNote: anomalyNote.value.trim(),
           handoverNote: '',
+          templateId: selectedTemplateId.value || null,
         });
 
         statusLogStorage.create({
@@ -148,7 +164,15 @@ export const ProjectForm = component$<ProjectFormProps>(({ mode, initialData }) 
           : null;
 
         if (appliedTemplate) {
-          applyTemplateToProject(selectedTemplateId.value, newProject.id);
+          const applyResult = applyTemplateToProject(selectedTemplateId.value, newProject.id);
+
+          statusLogStorage.create({
+            projectId: newProject.id,
+            fromStatus: handoverStatus.value,
+            toStatus: handoverStatus.value,
+            remark: `套用模板「${appliedTemplate.name}」：自动生成 ${applyResult.cards.length} 张素材卡、${applyResult.backups.length} 个备份位置、${applyResult.missings.length} 项核对清单及交接备注草稿`,
+            timestamp: new Date().toISOString(),
+          });
 
           logActivity(
             newProject.id,
@@ -162,9 +186,28 @@ export const ProjectForm = component$<ProjectFormProps>(({ mode, initialData }) 
               videographer: newProject.videographer,
               templateId: appliedTemplate.id,
               templateName: appliedTemplate.name,
+              templateDescription: appliedTemplate.description,
               storageCardCount: appliedTemplate.storageCards.length,
               backupLocationCount: appliedTemplate.backupLocations.length,
               missingItemCount: appliedTemplate.missingItems.length,
+              generatedCards: applyResult.cards.map(c => ({
+                id: c.id,
+                label: c.cardLabel,
+                deviceType: c.deviceType,
+                deviceName: c.deviceName,
+                capacity: c.capacity,
+              })),
+              generatedBackups: applyResult.backups.map(b => ({
+                id: b.id,
+                location: b.location,
+                locationType: b.locationType,
+              })),
+              generatedMissings: applyResult.missings.map(m => ({
+                id: m.id,
+                description: m.description,
+                severity: m.severity,
+              })),
+              generatedHandoverNote: appliedTemplate.handoverNote,
             }
           );
         } else {
@@ -322,9 +365,7 @@ export const ProjectForm = component$<ProjectFormProps>(({ mode, initialData }) 
                     return (
                       <div
                         key={template.id}
-                        onClick$={() => {
-                          selectedTemplateId.value = template.id;
-                        }}
+                        onClick$={() => handleSelectTemplate(template.id)}
                         class={`cursor-pointer rounded-xl border-2 p-4 transition-all ${
                           isSelected
                             ? 'border-champagne-500 bg-champagne-50/50'
@@ -357,22 +398,27 @@ export const ProjectForm = component$<ProjectFormProps>(({ mode, initialData }) 
                             <p class="text-xs text-gray-400 truncate">{template.description}</p>
                           </div>
                         </div>
-                        <div class="flex gap-3 text-[11px] text-gray-500">
+                        <div class="flex gap-3 text-[11px] text-gray-500 mb-2">
                           <span>💾 {template.storageCards.length}卡</span>
                           <span>🖥️ {template.backupLocations.length}备份</span>
                           <span>✅ {template.missingItems.length}项</span>
                         </div>
                         {isSelected && (
-                          <button
-                            type="button"
-                            onClick$={(e) => {
-                              e.stopPropagation();
-                              showTemplatePreview.value = !showTemplatePreview.value;
-                            }}
-                            class="mt-3 w-full text-xs text-champagne-600 hover:text-champagne-700 bg-champagne-100/50 hover:bg-champagne-100 rounded-lg py-1.5 transition-colors"
-                          >
-                            {showTemplatePreview.value ? '收起预览' : '查看模板详情'}
-                          </button>
+                          <div class="space-y-2">
+                            <div class="text-[11px] text-champagne-700 bg-champagne-100 rounded-md px-2 py-1 text-center font-medium">
+                              ✓ 已套用：存储卡数量已自动更新为 {template.storageCards.length} 张
+                            </div>
+                            <button
+                              type="button"
+                              onClick$={(e) => {
+                                e.stopPropagation();
+                                showTemplatePreview.value = !showTemplatePreview.value;
+                              }}
+                              class="w-full text-xs text-champagne-600 hover:text-champagne-700 bg-champagne-50 hover:bg-champagne-100 rounded-lg py-1.5 transition-colors border border-champagne-200"
+                            >
+                              {showTemplatePreview.value ? '收起详细预览' : '展开详细预览'}
+                            </button>
+                          </div>
                         )}
                       </div>
                     );

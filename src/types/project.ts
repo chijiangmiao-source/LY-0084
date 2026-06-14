@@ -43,6 +43,7 @@ export interface WeddingProject {
   handoverStatus: HandoverStatus;
   anomalyNote: string;
   handoverNote: string;
+  templateId: string | null;
   createdAt: string;
   updatedAt: string;
 }

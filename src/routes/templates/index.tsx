@@ -15,13 +15,14 @@ import {
   BACKUP_LOCATION_TYPE_LABELS,
   BACKUP_LOCATION_TYPE_ICONS,
 } from '~/types/project';
-import { templateStorage } from '~/utils/storage';
+import { templateStorage, projectStorage } from '~/utils/storage';
 import { formatDate } from '~/utils/dateUtils';
 
 const TEMPLATE_ICONS = ['💒', '📸', '🚁', '🎥', '🎤', '💍', '👰', '🤵', '💾', '✨'];
 
 export default component$(() => {
   const templates = useSignal<HandoverTemplate[]>([]);
+  const templateProjectCounts = useSignal<Record<string, number>>({});
   const showForm = useSignal(false);
   const editingTemplate = useSignal<HandoverTemplate | null>(null);
 
@@ -37,6 +38,12 @@ export default component$(() => {
   const loadTemplates = $(() => {
     templateStorage.initDefaults();
     templates.value = templateStorage.getAll();
+    const allProjects = projectStorage.getAll();
+    const counts: Record<string, number> = {};
+    for (const tpl of templates.value) {
+      counts[tpl.id] = allProjects.filter((p) => p.templateId === tpl.id).length;
+    }
+    templateProjectCounts.value = counts;
   });
 
   useVisibleTask$(() => {
@@ -156,7 +163,14 @@ export default component$(() => {
     };
 
     if (editingTemplate.value) {
-      templateStorage.update(editingTemplate.value.id, templateData);
+      const linkedCount = templateProjectCounts.value[editingTemplate.value.id] || 0;
+      if (linkedCount > 0) {
+        const confirmed = confirm(
+          `即将保存对模板的修改。\n\n⚠️ 该模板当前关联了 ${linkedCount} 个项目。\n\n保存后，以下内容将自动同步至所有关联项目：\n• 未回收的存储卡将按新模板重新生成\n• 未完成的备份位置将按新模板重新生成\n• 未解决的缺失核对项将按新模板重新生成\n• 交接备注将被新模板覆盖\n\n已完成/已回收/已解决的内容不会被修改。\n\n是否继续？`
+        );
+        if (!confirmed) return;
+      }
+      templateStorage.update(editingTemplate.value.id, templateData, true);
     } else {
       templateStorage.create(templateData);
     }
@@ -166,13 +180,17 @@ export default component$(() => {
   });
 
   const deleteTemplate = $((id: string, name: string) => {
-    if (!confirm(`确定要删除模板「${name}」吗？`)) return;
+    const linkedCount = templateProjectCounts.value[id] || 0;
+    const confirmMsg = linkedCount > 0
+      ? `确定要删除模板「${name}」吗？\n\n⚠️ 该模板当前关联了 ${linkedCount} 个项目，删除后这些项目将自动解除与模板的关联（不会删除项目本身）。`
+      : `确定要删除模板「${name}」吗？`;
+    if (!confirm(confirmMsg)) return;
     templateStorage.delete(id);
     loadTemplates();
   });
 
   const setDefault = $((id: string) => {
-    templateStorage.update(id, { isDefault: true });
+    templateStorage.update(id, { isDefault: true }, false);
     loadTemplates();
   });
 
@@ -266,6 +284,17 @@ export default component$(() => {
                   <div class="flex items-center gap-2 text-xs text-gray-500">
                     <span>✅</span>
                     <span>核对项：{template.missingItems.length} 项</span>
+                  </div>
+                  <div class={`flex items-center gap-2 text-xs ${
+                    (templateProjectCounts.value[template.id] || 0) > 0
+                      ? 'text-champagne-600 font-medium'
+                      : 'text-gray-400'
+                  }`}>
+                    <span>📁</span>
+                    <span>
+                      关联项目：{(templateProjectCounts.value[template.id] || 0)} 个
+                      {(templateProjectCounts.value[template.id] || 0) > 0 && '（修改将同步）'}
+                    </span>
                   </div>
                 </div>
 

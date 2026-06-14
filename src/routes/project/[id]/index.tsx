@@ -16,7 +16,9 @@ import {
   missingStorage,
   activityLogStorage,
   logActivity,
+  templateStorage,
 } from '~/utils/storage';
+import type { HandoverTemplate } from '~/types/project';
 import { formatDate, formatDateTime } from '~/utils/dateUtils';
 import { validateHandoverStatusChange } from '~/utils/validators';
 import { calculateBackupProgress, calculateRecoveryProgress } from '~/utils/statistics';
@@ -34,6 +36,7 @@ const EMPTY_PROJECT: WeddingProject = {
   handoverStatus: 'pending',
   anomalyNote: '',
   handoverNote: '',
+  templateId: null,
   createdAt: '',
   updatedAt: '',
 };
@@ -63,6 +66,7 @@ export default component$(() => {
   const project = useSignal<WeddingProject>(EMPTY_PROJECT);
   const statusLogs = useSignal<StatusLog[]>([]);
   const activityLogs = useSignal<ActivityLog[]>([]);
+  const linkedTemplate = useSignal<HandoverTemplate | null>(null);
   const notFound = useSignal(false);
   const errorMessage = useSignal('');
   const showStatusModal = useSignal(false);
@@ -81,6 +85,9 @@ export default component$(() => {
     project.value = data;
     statusLogs.value = statusLogStorage.getByProjectId(projectId);
     activityLogs.value = activityLogStorage.getByProjectId(projectId);
+    if (data.templateId) {
+      linkedTemplate.value = templateStorage.getById(data.templateId) || null;
+    }
     isLoaded.value = true;
   });
 
@@ -274,6 +281,28 @@ export default component$(() => {
                         <span class="text-gray-500">摄像师</span>
                         <span class="font-medium text-gray-800">{p.videographer || '未安排'}</span>
                       </div>
+                      {linkedTemplate.value ? (
+                        <div class="pt-3 mt-3 border-t border-gray-100">
+                          <div class="text-gray-500 text-sm mb-2">关联模板</div>
+                          <Link
+                            href="/templates"
+                            class="flex items-center gap-2 p-2 bg-champagne-50 rounded-lg hover:bg-champagne-100 transition-colors no-underline"
+                          >
+                            <div class="w-8 h-8 bg-champagne-200 rounded-md flex items-center justify-center text-lg">
+                              {linkedTemplate.value.icon}
+                            </div>
+                            <div class="flex-1 min-w-0">
+                              <p class="text-sm font-medium text-champagne-700 truncate">
+                                {linkedTemplate.value.name}
+                              </p>
+                              <p class="text-[11px] text-champagne-600/70 truncate">
+                                修改模板将同步更新本项目
+                              </p>
+                            </div>
+                            <span class="text-champagne-500 text-xs">→</span>
+                          </Link>
+                        </div>
+                      ) : null}
                     </div>
                   </div>
 

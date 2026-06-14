@@ -393,10 +393,15 @@ export const templateStorage = {
     return newTemplate;
   },
 
-  update(id: string, updates: Partial<HandoverTemplate>): HandoverTemplate | undefined {
+  update(
+    id: string,
+    updates: Partial<HandoverTemplate>,
+    syncToProjects: boolean = true
+  ): HandoverTemplate | undefined {
     const templates = this.getAll();
     const index = templates.findIndex((t) => t.id === id);
     if (index === -1) return undefined;
+    const oldTemplate = { ...templates[index] };
     if (updates.isDefault) {
       templates.forEach((t) => (t.isDefault = false));
     }
@@ -406,14 +411,217 @@ export const templateStorage = {
       updatedAt: new Date().toISOString(),
     };
     safeSet(STORAGE_KEYS.templates, templates);
-    return templates[index];
+    const updatedTemplate = templates[index];
+
+    if (syncToProjects) {
+      this.syncToLinkedProjects(updatedTemplate, oldTemplate);
+    }
+
+    return updatedTemplate;
   },
 
-  delete(id: string): boolean {
+  syncToLinkedProjects(
+    updatedTemplate: HandoverTemplate,
+    oldTemplate?: HandoverTemplate
+  ): void {
+    const allProjects = projectStorage.getAll();
+    const linkedProjects = allProjects.filter((p) => p.templateId === updatedTemplate.id);
+
+    for (const project of linkedProjects) {
+      const existingCards = cardStorage.getByProjectId(project.id);
+      const existingBackups = backupStorage.getByProjectId(project.id);
+      const existingMissings = missingStorage.getByProjectId(project.id);
+
+      let cardChanges = '';
+      let backupChanges = '';
+      let missingChanges = '';
+      let noteChanged = false;
+
+      if (
+        !oldTemplate ||
+        JSON.stringify(oldTemplate.storageCards) !==
+          JSON.stringify(updatedTemplate.storageCards)
+      ) {
+        const unrecoveredCards = existingCards.filter((c) => !c.isRecovered);
+        for (const c of unrecoveredCards) {
+          cardStorage.delete(c.id);
+        }
+        const newCards: StorageCard[] = [];
+        for (const tplCard of updatedTemplate.storageCards) {
+          const matchingExisting = existingCards.find(
+            (c) =>
+              c.isRecovered &&
+              c.cardLabel === tplCard.cardLabel &&
+              c.deviceType === tplCard.deviceType
+          );
+          if (!matchingExisting) {
+            newCards.push(
+              cardStorage.create({
+                projectId: project.id,
+                cardLabel: tplCard.cardLabel,
+                deviceType: tplCard.deviceType,
+                deviceName: tplCard.deviceName,
+                capacity: tplCard.capacity,
+                isRecovered: false,
+                recoveredAt: null,
+              })
+            );
+          }
+        }
+        const allProjectCards = cardStorage.getByProjectId(project.id);
+        projectStorage.update(project.id, { cardCount: allProjectCards.length });
+        cardChanges = `存储卡：删除 ${unrecoveredCards.length} 张未回收卡，新增 ${newCards.length} 张，现共 ${allProjectCards.length} 张`;
+      }
+
+      if (
+        !oldTemplate ||
+        JSON.stringify(oldTemplate.backupLocations) !==
+          JSON.stringify(updatedTemplate.backupLocations)
+      ) {
+        const incompleteBackups = existingBackups.filter((b) => !b.isCompleted);
+        for (const b of incompleteBackups) {
+          backupStorage.delete(b.id);
+        }
+        const newBackups: BackupRecord[] = [];
+        for (const tplBackup of updatedTemplate.backupLocations) {
+          const matchingExisting = existingBackups.find(
+            (b) =>
+              b.isCompleted &&
+              b.location === tplBackup.location &&
+              b.locationType === tplBackup.locationType
+          );
+          if (!matchingExisting) {
+            newBackups.push(
+              backupStorage.create({
+                projectId: project.id,
+                location: tplBackup.location,
+                locationType: tplBackup.locationType,
+                isCompleted: false,
+                completedAt: null,
+                startedAt: null,
+              })
+            );
+          }
+        }
+        backupChanges = `备份位置：删除 ${incompleteBackups.length} 个未完成位置，新增 ${newBackups.length} 个`;
+      }
+
+      if (
+        !oldTemplate ||
+        JSON.stringify(oldTemplate.missingItems) !==
+          JSON.stringify(updatedTemplate.missingItems)
+      ) {
+        const unresolvedMissings = existingMissings.filter((m) => !m.isResolved);
+        for (const m of unresolvedMissings) {
+          missingStorage.delete(m.id);
+        }
+        const newMissings: MissingItem[] = [];
+        for (const tplMissing of updatedTemplate.missingItems) {
+          const matchingExisting = existingMissings.find(
+            (m) =>
+              m.isResolved &&
+              m.description === tplMissing.description &&
+              m.severity === tplMissing.severity
+          );
+          if (!matchingExisting) {
+            newMissings.push(
+              missingStorage.create({
+                projectId: project.id,
+                description: tplMissing.description,
+                severity: tplMissing.severity,
+                isResolved: false,
+                resolution: '',
+              })
+            );
+          }
+        }
+        missingChanges = `核对项：删除 ${unresolvedMissings.length} 项未解决，新增 ${newMissings.length} 项`;
+      }
+
+      if (!oldTemplate || oldTemplate.handoverNote !== updatedTemplate.handoverNote) {
+        projectStorage.update(project.id, { handoverNote: updatedTemplate.handoverNote });
+        noteChanged = true;
+      }
+
+      const now = new Date().toISOString();
+      const updatedProject = projectStorage.getById(project.id);
+
+      statusLogStorage.create({
+        projectId: project.id,
+        fromStatus: updatedProject?.handoverStatus || project.handoverStatus,
+        toStatus: updatedProject?.handoverStatus || project.handoverStatus,
+        remark: `模板「${updatedTemplate.name}」已更新并同步至项目。${cardChanges}；${backupChanges}；${missingChanges}${noteChanged ? '；交接备注已同步' : ''}`,
+        timestamp: now,
+      });
+
+      const details: Record<string, unknown> = {
+        templateId: updatedTemplate.id,
+        templateName: updatedTemplate.name,
+        cardChanges,
+        backupChanges,
+        missingChanges,
+        handoverNoteChanged: noteChanged,
+      };
+      if (oldTemplate) {
+        details.diff = {
+          storageCards: {
+            old: oldTemplate.storageCards.length,
+            new: updatedTemplate.storageCards.length,
+          },
+          backupLocations: {
+            old: oldTemplate.backupLocations.length,
+            new: updatedTemplate.backupLocations.length,
+          },
+          missingItems: {
+            old: oldTemplate.missingItems.length,
+            new: updatedTemplate.missingItems.length,
+          },
+        };
+      }
+
+      activityLogStorage.create({
+        projectId: project.id,
+        type: 'project_edit',
+        description: `同步模板「${updatedTemplate.name}」更新至项目：${cardChanges}；${backupChanges}；${missingChanges}${noteChanged ? '；交接备注已同步' : ''}`,
+        details,
+        timestamp: now,
+      });
+    }
+  },
+
+  delete(id: string, unlinkProjects: boolean = true): boolean {
     const templates = this.getAll();
     const filtered = templates.filter((t) => t.id !== id);
     if (filtered.length === templates.length) return false;
     safeSet(STORAGE_KEYS.templates, filtered);
+
+    if (unlinkProjects) {
+      const allProjects = projectStorage.getAll();
+      const linkedProjects = allProjects.filter((p) => p.templateId === id);
+      for (const project of linkedProjects) {
+        projectStorage.update(project.id, { templateId: null });
+
+        statusLogStorage.create({
+          projectId: project.id,
+          fromStatus: project.handoverStatus,
+          toStatus: project.handoverStatus,
+          remark: `关联的模板「${templates.find((t) => t.id === id)?.name || '已删除'}」已被删除，项目已解除模板关联`,
+          timestamp: new Date().toISOString(),
+        });
+
+        activityLogStorage.create({
+          projectId: project.id,
+          type: 'project_edit',
+          description: `关联的模板已被删除，项目已解除模板关联`,
+          details: {
+            templateId: id,
+            templateName: templates.find((t) => t.id === id)?.name,
+          },
+          timestamp: new Date().toISOString(),
+        });
+      }
+    }
+
     return true;
   },
 
