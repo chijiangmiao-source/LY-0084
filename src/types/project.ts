@@ -44,6 +44,7 @@ export interface WeddingProject {
   anomalyNote: string;
   handoverNote: string;
   templateId: string | null;
+  templateSnapshot: ProjectTemplateSnapshot | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -219,6 +220,64 @@ export interface TemplateMissingItem {
   severity: MissingSeverity;
 }
 
+export type SyncStrategy = 'auto' | 'selective' | 'locked';
+
+export const SYNC_STRATEGY_LABELS: Record<SyncStrategy, string> = {
+  auto: '自动同步',
+  selective: '选择性同步',
+  locked: '锁定快照',
+};
+
+export const SYNC_STRATEGY_DESCRIPTIONS: Record<SyncStrategy, string> = {
+  auto: '模板更新时自动同步所有变更到项目',
+  selective: '模板更新时显示差异，手动选择要同步的内容',
+  locked: '保留项目创建时的模板快照，不接收任何模板更新',
+};
+
+export interface TemplateVersion {
+  id: string;
+  templateId: string;
+  version: number;
+  name: string;
+  description: string;
+  icon: string;
+  storageCards: TemplateStorageCard[];
+  backupLocations: TemplateBackupLocation[];
+  missingItems: TemplateMissingItem[];
+  handoverNote: string;
+  createdAt: string;
+  changeLog?: string;
+}
+
+export interface ProjectTemplateSnapshot {
+  templateId: string;
+  templateName: string;
+  templateIcon: string;
+  versionId: string;
+  versionNumber: number;
+  appliedAt: string;
+  storageCards: TemplateStorageCard[];
+  backupLocations: TemplateBackupLocation[];
+  missingItems: TemplateMissingItem[];
+  handoverNote: string;
+  syncStrategy: SyncStrategy;
+}
+
+export interface DiffItem<T> {
+  type: 'added' | 'removed' | 'modified';
+  oldValue?: T;
+  newValue?: T;
+  field: string;
+}
+
+export interface TemplateDiff {
+  storageCards: DiffItem<TemplateStorageCard>[];
+  backupLocations: DiffItem<TemplateBackupLocation>[];
+  missingItems: DiffItem<TemplateMissingItem>[];
+  handoverNote: DiffItem<string> | null;
+  hasChanges: boolean;
+}
+
 export interface HandoverTemplate {
   id: string;
   name: string;
@@ -229,6 +288,7 @@ export interface HandoverTemplate {
   missingItems: TemplateMissingItem[];
   handoverNote: string;
   isDefault: boolean;
+  currentVersion: number;
   createdAt: string;
   updatedAt: string;
 }

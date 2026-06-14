@@ -1,12 +1,14 @@
 import { component$, useSignal, $, useVisibleTask$ } from '@builder.io/qwik';
 import { Link, useNavigate } from '@builder.io/qwik-city';
-import type { HandoverStatus, ProjectFormData, HandoverTemplate } from '~/types/project';
+import type { HandoverStatus, ProjectFormData, HandoverTemplate, SyncStrategy } from '~/types/project';
 import {
   HANDOVER_STATUS_LABELS,
   DEVICE_TYPE_ICONS,
   BACKUP_LOCATION_TYPE_LABELS,
   BACKUP_LOCATION_TYPE_ICONS,
   MISSING_SEVERITY_LABELS,
+  SYNC_STRATEGY_LABELS,
+  SYNC_STRATEGY_DESCRIPTIONS,
 } from '~/types/project';
 import {
   projectStorage,
@@ -67,6 +69,7 @@ export const ProjectForm = component$<ProjectFormProps>(({ mode, initialData }) 
   const templates = useSignal<HandoverTemplate[]>([]);
   const selectedTemplateId = useSignal<string>('');
   const showTemplatePreview = useSignal(false);
+  const selectedSyncStrategy = useSignal<SyncStrategy>('auto');
 
   const errors = useSignal<Record<string, string>>({});
   const isSubmitting = useSignal(false);
@@ -149,6 +152,7 @@ export const ProjectForm = component$<ProjectFormProps>(({ mode, initialData }) 
           anomalyNote: anomalyNote.value.trim(),
           handoverNote: '',
           templateId: selectedTemplateId.value || null,
+          templateSnapshot: null,
         });
 
         statusLogStorage.create({
@@ -164,13 +168,13 @@ export const ProjectForm = component$<ProjectFormProps>(({ mode, initialData }) 
           : null;
 
         if (appliedTemplate) {
-          const applyResult = applyTemplateToProject(selectedTemplateId.value, newProject.id);
+          const applyResult = applyTemplateToProject(selectedTemplateId.value, newProject.id, selectedSyncStrategy.value);
 
           statusLogStorage.create({
             projectId: newProject.id,
             fromStatus: handoverStatus.value,
             toStatus: handoverStatus.value,
-            remark: `套用模板「${appliedTemplate.name}」：自动生成 ${applyResult.cards.length} 张素材卡、${applyResult.backups.length} 个备份位置、${applyResult.missings.length} 项核对清单及交接备注草稿`,
+            remark: `套用模板「${appliedTemplate.name}」v${appliedTemplate.currentVersion}：自动生成 ${applyResult.cards.length} 张素材卡、${applyResult.backups.length} 个备份位置、${applyResult.missings.length} 项核对清单及交接备注草稿。同步策略：${SYNC_STRATEGY_LABELS[selectedSyncStrategy.value]}`,
             timestamp: new Date().toISOString(),
           });
 
@@ -187,6 +191,9 @@ export const ProjectForm = component$<ProjectFormProps>(({ mode, initialData }) 
               templateId: appliedTemplate.id,
               templateName: appliedTemplate.name,
               templateDescription: appliedTemplate.description,
+              templateVersion: appliedTemplate.currentVersion,
+              syncStrategy: selectedSyncStrategy.value,
+              syncStrategyLabel: SYNC_STRATEGY_LABELS[selectedSyncStrategy.value],
               storageCardCount: appliedTemplate.storageCards.length,
               backupLocationCount: appliedTemplate.backupLocations.length,
               missingItemCount: appliedTemplate.missingItems.length,
@@ -208,6 +215,7 @@ export const ProjectForm = component$<ProjectFormProps>(({ mode, initialData }) 
                 severity: m.severity,
               })),
               generatedHandoverNote: appliedTemplate.handoverNote,
+              templateSnapshot: applyResult.snapshot,
             }
           );
         } else {
@@ -447,6 +455,62 @@ export const ProjectForm = component$<ProjectFormProps>(({ mode, initialData }) 
                 </div>
               </div>
 
+              {selectedTemplateId.value && (
+                <div class="mt-4 pt-4 border-t border-gray-100">
+                  <div class="mb-4">
+                    <p class="text-sm font-medium text-gray-700 mb-2">🔄 模板同步策略</p>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                      {(['auto', 'selective', 'locked'] as SyncStrategy[]).map((strategy) => {
+                        const isSelected = selectedSyncStrategy.value === strategy;
+                        return (
+                          <div
+                            key={strategy}
+                            onClick$={() => (selectedSyncStrategy.value = strategy)}
+                            class={`cursor-pointer rounded-xl border-2 p-3 transition-all ${
+                              isSelected
+                                ? 'border-champagne-500 bg-champagne-50/50'
+                                : 'border-gray-200 hover:border-champagne-300 bg-white'
+                            }`}
+                          >
+                            <div class="flex items-center gap-2 mb-1">
+                              <span class="text-base">
+                                {strategy === 'auto' ? '⚡' : strategy === 'selective' ? '🎯' : '🔒'}
+                              </span>
+                              <p class={`text-sm font-medium ${
+                                isSelected ? 'text-champagne-700' : 'text-gray-800'
+                              }`}>
+                                {SYNC_STRATEGY_LABELS[strategy]}
+                              </p>
+                            </div>
+                            <p class="text-xs text-gray-500 leading-relaxed">
+                              {SYNC_STRATEGY_DESCRIPTIONS[strategy]}
+                            </p>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div class="flex items-center justify-between mb-3">
+                    <p class="text-xs text-gray-500">
+                      {selectedSyncStrategy.value === 'auto' && '模板更新时，项目将自动同步所有变更'}
+                      {selectedSyncStrategy.value === 'selective' && '模板更新时，您可以手动选择要同步的内容'}
+                      {selectedSyncStrategy.value === 'locked' && '项目将保留创建时的模板快照，不受模板更新影响'}
+                    </p>
+                    <button
+                      type="button"
+                      onClick$={(e) => {
+                        e.stopPropagation();
+                        showTemplatePreview.value = !showTemplatePreview.value;
+                      }}
+                      class="text-xs text-champagne-600 hover:text-champagne-700 bg-champagne-50 hover:bg-champagne-100 rounded-lg py-1.5 px-3 transition-colors border border-champagne-200"
+                    >
+                      {showTemplatePreview.value ? '收起详细预览' : '展开详细预览'}
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {showTemplatePreview.value && selectedTemplateId.value &&
                 (() => {
                   const selected = templates.value.find(
@@ -455,6 +519,12 @@ export const ProjectForm = component$<ProjectFormProps>(({ mode, initialData }) 
                   if (!selected) return null;
                   return (
                     <div class="mt-4 pt-4 border-t border-gray-100 space-y-4">
+                      <div class="flex items-center gap-2 text-xs text-gray-500 mb-2">
+                        <span class="bg-champagne-100 text-champagne-700 px-2 py-0.5 rounded-full font-medium">
+                          v{selected.currentVersion}
+                        </span>
+                        <span>当前模板版本</span>
+                      </div>
                       {selected.storageCards.length > 0 && (
                         <div>
                           <p class="text-sm font-medium text-gray-700 mb-2">📸 存储卡检查项 ({selected.storageCards.length}张)

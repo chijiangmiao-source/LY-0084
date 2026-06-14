@@ -17,11 +17,13 @@ import {
   activityLogStorage,
   logActivity,
   templateStorage,
+  getProjectTemplateDiff,
 } from '~/utils/storage';
-import type { HandoverTemplate } from '~/types/project';
+import type { HandoverTemplate, TemplateDiff } from '~/types/project';
 import { formatDate, formatDateTime } from '~/utils/dateUtils';
 import { validateHandoverStatusChange } from '~/utils/validators';
 import { calculateBackupProgress, calculateRecoveryProgress } from '~/utils/statistics';
+import { TemplateVersionPanel } from '~/components/detail/TemplateVersionPanel';
 
 const EMPTY_PROJECT: WeddingProject = {
   id: '',
@@ -37,6 +39,7 @@ const EMPTY_PROJECT: WeddingProject = {
   anomalyNote: '',
   handoverNote: '',
   templateId: null,
+  templateSnapshot: null,
   createdAt: '',
   updatedAt: '',
 };
@@ -48,12 +51,13 @@ export const useProjectLoader = routeLoader$(async () => {
   };
 });
 
-type TabType = 'overview' | 'cards' | 'backup' | 'timeline' | 'notes';
+type TabType = 'overview' | 'cards' | 'backup' | 'template' | 'timeline' | 'notes';
 
 const TABS: { key: TabType; label: string; icon: string }[] = [
   { key: 'overview', label: '概览', icon: '📊' },
   { key: 'cards', label: '素材卡', icon: '💾' },
   { key: 'backup', label: '备份', icon: '💽' },
+  { key: 'template', label: '模板版本', icon: '📋' },
   { key: 'timeline', label: '时间线', icon: '📅' },
   { key: 'notes', label: '备注&缺失', icon: '📝' },
 ];
@@ -67,6 +71,7 @@ export default component$(() => {
   const statusLogs = useSignal<StatusLog[]>([]);
   const activityLogs = useSignal<ActivityLog[]>([]);
   const linkedTemplate = useSignal<HandoverTemplate | null>(null);
+  const templateDiff = useSignal<TemplateDiff | null>(null);
   const notFound = useSignal(false);
   const errorMessage = useSignal('');
   const showStatusModal = useSignal(false);
@@ -87,6 +92,7 @@ export default component$(() => {
     activityLogs.value = activityLogStorage.getByProjectId(projectId);
     if (data.templateId) {
       linkedTemplate.value = templateStorage.getById(data.templateId) || null;
+      templateDiff.value = getProjectTemplateDiff(projectId);
     }
     isLoaded.value = true;
   });
@@ -97,6 +103,10 @@ export default component$(() => {
       project.value = data;
       statusLogs.value = statusLogStorage.getByProjectId(projectId);
       activityLogs.value = activityLogStorage.getByProjectId(projectId);
+      if (data.templateId) {
+        linkedTemplate.value = templateStorage.getById(data.templateId) || null;
+        templateDiff.value = getProjectTemplateDiff(projectId);
+      }
     }
   });
 
@@ -281,7 +291,54 @@ export default component$(() => {
                         <span class="text-gray-500">摄像师</span>
                         <span class="font-medium text-gray-800">{p.videographer || '未安排'}</span>
                       </div>
-                      {linkedTemplate.value ? (
+                      {linkedTemplate.value && project.value.templateSnapshot ? (
+                        <div class="pt-3 mt-3 border-t border-gray-100">
+                          <div class="flex items-center justify-between mb-2">
+                            <div class="text-gray-500 text-sm">关联模板</div>
+                            {templateDiff.value?.hasChanges && (
+                              <span class="text-[10px] bg-wine-100 text-wine-700 px-2 py-0.5 rounded-full">
+                                🔔 有更新
+                              </span>
+                            )}
+                          </div>
+                          <Link
+                            href="/templates"
+                            class="flex items-center gap-2 p-2 bg-champagne-50 rounded-lg hover:bg-champagne-100 transition-colors no-underline"
+                          >
+                            <div class="w-8 h-8 bg-champagne-200 rounded-md flex items-center justify-center text-lg">
+                              {linkedTemplate.value.icon}
+                            </div>
+                            <div class="flex-1 min-w-0">
+                              <div class="flex items-center gap-2">
+                                <p class="text-sm font-medium text-champagne-700 truncate">
+                                  {linkedTemplate.value.name}
+                                </p>
+                                <span class="text-[10px] bg-champagne-200 text-champagne-700 px-1.5 py-0.5 rounded-full">
+                                  v{project.value.templateSnapshot.versionNumber}
+                                </span>
+                              </div>
+                              <p class="text-[11px] text-champagne-600/70 truncate">
+                                {templateDiff.value?.hasChanges
+                                  ? `最新版本 v${linkedTemplate.value.currentVersion}，点击"模板版本"查看差异`
+                                  : `已是最新版本 v${linkedTemplate.value.currentVersion}`}
+                              </p>
+                            </div>
+                            <span class="text-champagne-500 text-xs">→</span>
+                          </Link>
+                          {project.value.templateSnapshot.syncStrategy && (
+                            <div class="mt-2 flex items-center gap-1 text-[11px] text-gray-500">
+                              <span>
+                                {project.value.templateSnapshot.syncStrategy === 'auto' ? '⚡' :
+                                 project.value.templateSnapshot.syncStrategy === 'selective' ? '🎯' : '🔒'}
+                              </span>
+                              <span>
+                                {project.value.templateSnapshot.syncStrategy === 'auto' ? '自动同步' :
+                                 project.value.templateSnapshot.syncStrategy === 'selective' ? '选择性同步' : '锁定快照'}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      ) : linkedTemplate.value ? (
                         <div class="pt-3 mt-3 border-t border-gray-100">
                           <div class="text-gray-500 text-sm mb-2">关联模板</div>
                           <Link
@@ -409,6 +466,14 @@ export default component$(() => {
 
             {activeTab.value === 'backup' && (
               <BackupStatus
+                projectId={projectId}
+                project={p}
+                onUpdate$={handleUpdate}
+              />
+            )}
+
+            {activeTab.value === 'template' && (
+              <TemplateVersionPanel
                 projectId={projectId}
                 project={p}
                 onUpdate$={handleUpdate}

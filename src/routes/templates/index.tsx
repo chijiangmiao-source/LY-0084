@@ -15,8 +15,8 @@ import {
   BACKUP_LOCATION_TYPE_LABELS,
   BACKUP_LOCATION_TYPE_ICONS,
 } from '~/types/project';
-import { templateStorage, projectStorage } from '~/utils/storage';
-import { formatDate } from '~/utils/dateUtils';
+import { templateStorage, projectStorage, templateVersionStorage } from '~/utils/storage';
+import { formatDate, formatDateTime } from '~/utils/dateUtils';
 
 const TEMPLATE_ICONS = ['💒', '📸', '🚁', '🎥', '🎤', '💍', '👰', '🤵', '💾', '✨'];
 
@@ -34,6 +34,9 @@ export default component$(() => {
   const formCards = useSignal<TemplateStorageCard[]>([]);
   const formBackups = useSignal<TemplateBackupLocation[]>([]);
   const formMissings = useSignal<TemplateMissingItem[]>([]);
+  const changeLog = useSignal('');
+  const showVersionHistory = useSignal(false);
+  const historyTemplateId = useSignal('');
 
   const loadTemplates = $(() => {
     templateStorage.initDefaults();
@@ -59,6 +62,7 @@ export default component$(() => {
     formCards.value = [];
     formBackups.value = [];
     formMissings.value = [];
+    changeLog.value = '';
     editingTemplate.value = null;
   });
 
@@ -76,8 +80,14 @@ export default component$(() => {
     formCards.value = JSON.parse(JSON.stringify(template.storageCards));
     formBackups.value = JSON.parse(JSON.stringify(template.backupLocations));
     formMissings.value = JSON.parse(JSON.stringify(template.missingItems));
+    changeLog.value = '';
     editingTemplate.value = template;
     showForm.value = true;
+  });
+
+  const openVersionHistory = $((templateId: string) => {
+    historyTemplateId.value = templateId;
+    showVersionHistory.value = true;
   });
 
   const closeForm = $(() => {
@@ -170,7 +180,12 @@ export default component$(() => {
         );
         if (!confirmed) return;
       }
-      templateStorage.update(editingTemplate.value.id, templateData, true);
+      templateStorage.update(
+        editingTemplate.value.id,
+        templateData,
+        true,
+        changeLog.value.trim() || undefined
+      );
     } else {
       templateStorage.create(templateData);
     }
@@ -262,6 +277,9 @@ export default component$(() => {
                             默认
                           </span>
                         )}
+                        <span class="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">
+                          v{template.currentVersion}
+                        </span>
                       </h3>
                       <p class="text-xs text-gray-400 mt-0.5">
                         更新于 {formatDate(template.updatedAt)}
@@ -320,12 +338,18 @@ export default component$(() => {
                 )}
 
                 <div class="flex gap-2 pt-3 border-t border-gray-100">
+                  <button
+                    onClick$={() => openVersionHistory(template.id)}
+                    class="flex-1 text-xs text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg py-2 transition-colors"
+                  >
+                    📜 版本
+                  </button>
                   {!template.isDefault && (
                     <button
                       onClick$={() => setDefault(template.id)}
                       class="flex-1 text-xs text-champagne-600 hover:text-champagne-700 bg-champagne-50 hover:bg-champagne-100 rounded-lg py-2 transition-colors"
                     >
-                      设为默认
+                      默认
                     </button>
                   )}
                   <button
@@ -690,6 +714,22 @@ export default component$(() => {
                   class="input-base resize-none text-sm"
                 />
               </div>
+
+              {editingTemplate.value && (
+                <div class="mt-6 pt-4 border-t border-gray-100">
+                  <label class="block text-sm font-medium text-gray-700 mb-1.5 flex items-center gap-2">
+                    📝 版本变更说明
+                    <span class="text-xs font-normal text-gray-400">（可选，将记录在版本历史中）</span>
+                  </label>
+                  <textarea
+                    value={changeLog.value}
+                    onInput$={(e) => (changeLog.value = (e.target as HTMLTextAreaElement).value)}
+                    placeholder="例如：新增第二机位存储卡、调整备份位置顺序、更新核对项..."
+                    rows={2}
+                    class="input-base resize-none text-sm"
+                  />
+                </div>
+              )}
             </div>
 
             <div class="px-6 py-4 border-t border-gray-100 flex justify-end gap-3">
@@ -706,6 +746,83 @@ export default component$(() => {
                 class="btn-primary"
               >
                 {editingTemplate.value ? '保存修改' : '创建模板'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showVersionHistory.value && historyTemplateId.value && (
+        <div class="fixed inset-0 bg-black/40 z-50 flex items-start justify-center py-8 overflow-y-auto">
+          <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl mx-4 overflow-hidden">
+            <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+              <h2 class="text-lg font-display font-semibold text-gray-800 flex items-center gap-2">
+                📜 模板版本历史
+              </h2>
+              <button
+                onClick$={() => (showVersionHistory.value = false)}
+                class="text-gray-400 hover:text-gray-600 text-2xl leading-none"
+              >
+                ×
+              </button>
+            </div>
+            <div class="px-6 py-4 max-h-[70vh] overflow-y-auto">
+              {(() => {
+                const versions = templateVersionStorage.getByTemplateId(historyTemplateId.value).sort(
+                  (a, b) => b.version - a.version
+                );
+                if (versions.length === 0) {
+                  return (
+                    <div class="text-center py-12 text-gray-400">
+                      <p class="text-4xl mb-3">📭</p>
+                      <p class="text-sm">暂无版本历史记录</p>
+                    </div>
+                  );
+                }
+                return (
+                  <div class="space-y-4">
+                    {versions.map((version, idx) => (
+                      <div
+                        key={version.id}
+                        class={`p-4 rounded-xl border ${
+                          idx === 0 ? 'bg-champagne-50 border-champagne-200' : 'bg-gray-50 border-gray-100'
+                        }`}
+                      >
+                        <div class="flex items-start justify-between mb-2">
+                          <div class="flex items-center gap-2">
+                            <span class="text-lg font-bold text-champagne-600">v{version.version}</span>
+                            {idx === 0 && (
+                              <span class="text-xs bg-champagne-200 text-champagne-700 px-2 py-0.5 rounded-full">
+                                最新版本
+                              </span>
+                            )}
+                          </div>
+                          <span class="text-xs text-gray-400">
+                            {formatDateTime(version.createdAt)}
+                          </span>
+                        </div>
+                        {version.changeLog ? (
+                          <p class="text-sm text-gray-700 mb-2">{version.changeLog}</p>
+                        ) : (
+                          <p class="text-sm text-gray-400 italic mb-2">未填写变更说明</p>
+                        )}
+                        <div class="flex flex-wrap gap-3 text-xs text-gray-500">
+                          <span>💾 存储卡 {version.storageCards.length} 张</span>
+                          <span>🖥️ 备份 {version.backupLocations.length} 个</span>
+                          <span>✅ 核对项 {version.missingItems.length} 项</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
+            </div>
+            <div class="px-6 py-4 border-t border-gray-100 flex justify-end">
+              <button
+                onClick$={() => (showVersionHistory.value = false)}
+                class="btn-primary"
+              >
+                关闭
               </button>
             </div>
           </div>
