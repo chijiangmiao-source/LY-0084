@@ -103,6 +103,7 @@ export const ProjectForm = component$<ProjectFormProps>(({ mode, initialData }) 
           backupCount: 0,
           handoverStatus: handoverStatus.value,
           anomalyNote: anomalyNote.value.trim(),
+          handoverNote: '',
         });
 
         statusLogStorage.create({

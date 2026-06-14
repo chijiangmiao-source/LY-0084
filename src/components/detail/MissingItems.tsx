@@ -1,7 +1,7 @@
 import { component$, useSignal, $, useVisibleTask$ } from '@builder.io/qwik';
 import type { MissingItem, MissingSeverity } from '~/types/project';
 import { MISSING_SEVERITY_LABELS } from '~/types/project';
-import { missingStorage } from '~/utils/storage';
+import { missingStorage, logActivity } from '~/utils/storage';
 import { formatDate } from '~/utils/dateUtils';
 
 interface MissingItemsProps {
@@ -23,13 +23,24 @@ export const MissingItems = component$<MissingItemsProps>(({ projectId }) => {
   const addItem = $(() => {
     if (!newDescription.value.trim()) return;
 
-    missingStorage.create({
+    const newItem = missingStorage.create({
       projectId,
       description: newDescription.value.trim(),
       severity: newSeverity.value,
       isResolved: false,
       resolution: '',
     });
+
+    logActivity(
+      projectId,
+      'missing_add',
+      `添加缺失记录：${newItem.description}（${MISSING_SEVERITY_LABELS[newItem.severity]}）`,
+      {
+        missingId: newItem.id,
+        description: newItem.description,
+        severity: newItem.severity,
+      }
+    );
 
     newDescription.value = '';
     newSeverity.value = 'medium';
@@ -39,12 +50,25 @@ export const MissingItems = component$<MissingItemsProps>(({ projectId }) => {
     );
   });
 
-  const toggleResolved = $((itemId: string, currentValue: boolean) => {
+  const toggleResolved = $((itemId: string, currentValue: boolean, description: string) => {
     missingStorage.update(itemId, {
       isResolved: !currentValue,
     });
     items.value = missingStorage.getByProjectId(projectId).sort((a, b) =>
       new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
+
+    logActivity(
+      projectId,
+      !currentValue ? 'missing_resolve' : 'missing_unresolve',
+      !currentValue
+        ? `标记缺失已解决：${description}`
+        : `取消缺失解决状态：${description}`,
+      {
+        missingId: itemId,
+        description,
+        isResolved: !currentValue,
+      }
     );
   });
 
@@ -55,11 +79,21 @@ export const MissingItems = component$<MissingItemsProps>(({ projectId }) => {
     );
   });
 
-  const deleteItem = $((itemId: string) => {
+  const deleteItem = $((itemId: string, description: string) => {
     if (!confirm('确定要删除这条缺失记录吗？')) return;
     missingStorage.delete(itemId);
     items.value = missingStorage.getByProjectId(projectId).sort((a, b) =>
       new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
+
+    logActivity(
+      projectId,
+      'missing_delete',
+      `删除缺失记录：${description}`,
+      {
+        missingId: itemId,
+        description,
+      }
     );
   });
 
@@ -159,7 +193,7 @@ export const MissingItems = component$<MissingItemsProps>(({ projectId }) => {
                 </div>
                 <div class="flex items-center gap-2">
                   <button
-                    onClick$={() => toggleResolved(item.id, item.isResolved)}
+                    onClick$={() => toggleResolved(item.id, item.isResolved, item.description)}
                     class={`text-sm px-3 py-1 rounded-lg transition-colors ${
                       item.isResolved
                         ? 'text-green-600 bg-green-50 hover:bg-green-100'
@@ -169,7 +203,7 @@ export const MissingItems = component$<MissingItemsProps>(({ projectId }) => {
                     {item.isResolved ? '✓ 已解决' : '标记解决'}
                   </button>
                   <button
-                    onClick$={() => deleteItem(item.id)}
+                    onClick$={() => deleteItem(item.id, item.description)}
                     class="text-wine-400 hover:text-wine-600 text-sm"
                   >
                     删除

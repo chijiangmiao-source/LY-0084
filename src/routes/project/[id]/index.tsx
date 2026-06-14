@@ -1,13 +1,22 @@
 import { component$, useSignal, $, useVisibleTask$ } from '@builder.io/qwik';
 import { Link, useLocation, useNavigate, routeLoader$ } from '@builder.io/qwik-city';
-import type { WeddingProject, StatusLog, HandoverStatus } from '~/types/project';
-import { HANDOVER_STATUS_LABELS } from '~/types/project';
+import type { WeddingProject, StatusLog, HandoverStatus, ActivityLog } from '~/types/project';
+import { HANDOVER_STATUS_LABELS, HANDOVER_STATUS_COLORS } from '~/types/project';
 import { StatusBadge } from '~/components/ui/StatusBadge';
 import { StorageCardList } from '~/components/detail/StorageCardList';
 import { BackupStatus } from '~/components/detail/BackupStatus';
 import { MissingItems } from '~/components/detail/MissingItems';
 import { StatusTimeline } from '~/components/detail/StatusTimeline';
-import { projectStorage, statusLogStorage, cardStorage, backupStorage, missingStorage } from '~/utils/storage';
+import { HandoverNote } from '~/components/detail/HandoverNote';
+import {
+  projectStorage,
+  statusLogStorage,
+  cardStorage,
+  backupStorage,
+  missingStorage,
+  activityLogStorage,
+  logActivity,
+} from '~/utils/storage';
 import { formatDate, formatDateTime } from '~/utils/dateUtils';
 import { validateHandoverStatusChange } from '~/utils/validators';
 import { calculateBackupProgress, calculateRecoveryProgress } from '~/utils/statistics';
@@ -24,6 +33,7 @@ const EMPTY_PROJECT: WeddingProject = {
   recoveredCount: 0,
   handoverStatus: 'pending',
   anomalyNote: '',
+  handoverNote: '',
   createdAt: '',
   updatedAt: '',
 };
@@ -35,6 +45,16 @@ export const useProjectLoader = routeLoader$(async () => {
   };
 });
 
+type TabType = 'overview' | 'cards' | 'backup' | 'timeline' | 'notes';
+
+const TABS: { key: TabType; label: string; icon: string }[] = [
+  { key: 'overview', label: '概览', icon: '📊' },
+  { key: 'cards', label: '素材卡', icon: '💾' },
+  { key: 'backup', label: '备份', icon: '💽' },
+  { key: 'timeline', label: '时间线', icon: '📅' },
+  { key: 'notes', label: '备注&缺失', icon: '📝' },
+];
+
 export default component$(() => {
   const location = useLocation();
   const navigate = useNavigate();
@@ -42,12 +62,14 @@ export default component$(() => {
 
   const project = useSignal<WeddingProject>(EMPTY_PROJECT);
   const statusLogs = useSignal<StatusLog[]>([]);
+  const activityLogs = useSignal<ActivityLog[]>([]);
   const notFound = useSignal(false);
   const errorMessage = useSignal('');
   const showStatusModal = useSignal(false);
   const newStatus = useSignal<HandoverStatus>('pending');
   const statusRemark = useSignal('');
   const isLoaded = useSignal(false);
+  const activeTab = useSignal<TabType>('overview');
 
   useVisibleTask$(() => {
     const data = projectStorage.getById(projectId);
@@ -58,6 +80,7 @@ export default component$(() => {
     }
     project.value = data;
     statusLogs.value = statusLogStorage.getByProjectId(projectId);
+    activityLogs.value = activityLogStorage.getByProjectId(projectId);
     isLoaded.value = true;
   });
 
@@ -66,6 +89,7 @@ export default component$(() => {
     if (data) {
       project.value = data;
       statusLogs.value = statusLogStorage.getByProjectId(projectId);
+      activityLogs.value = activityLogStorage.getByProjectId(projectId);
     }
   });
 
@@ -97,6 +121,17 @@ export default component$(() => {
         remark: statusRemark.value || '状态变更',
         timestamp: new Date().toISOString(),
       });
+
+      logActivity(
+        projectId,
+        'status_change',
+        `状态从 ${HANDOVER_STATUS_LABELS[project.value.handoverStatus]} 变更为 ${HANDOVER_STATUS_LABELS[newStatus.value]}`,
+        {
+          fromStatus: project.value.handoverStatus,
+          toStatus: newStatus.value,
+          remark: statusRemark.value,
+        }
+      );
     }
 
     showStatusModal.value = false;
@@ -104,6 +139,7 @@ export default component$(() => {
     if (data) {
       project.value = data;
       statusLogs.value = statusLogStorage.getByProjectId(projectId);
+      activityLogs.value = activityLogStorage.getByProjectId(projectId);
     }
   });
 
@@ -116,6 +152,7 @@ export default component$(() => {
     backupStorage.deleteByProjectId(projectId);
     missingStorage.deleteByProjectId(projectId);
     statusLogStorage.deleteByProjectId(projectId);
+    activityLogStorage.deleteByProjectId(projectId);
 
     navigate('/');
   });
@@ -124,14 +161,14 @@ export default component$(() => {
   const backupProgress = calculateBackupProgress(p);
   const recoveryProgress = calculateRecoveryProgress(p);
 
-  const availableStatuses: { status: HandoverStatus; label: string; action: string }[] = [
-    { status: 'recovering', label: '开始回收', action: '开始回收存储卡' },
-    { status: 'backing_up', label: '开始备份', action: '开始进行备份' },
-    { status: 'backed_up', label: '备份完成', action: '标记备份完成' },
-    { status: 'handed_over', label: '确认交接', action: '确认交接完成' },
-    { status: 'editing', label: '进入待剪辑', action: '标记为待剪辑状态' },
-    { status: 'completed', label: '标记完成', action: '标记项目完成' },
-    { status: 'anomaly', label: '标记异常', action: '标记为异常状态' },
+  const availableStatuses: { status: HandoverStatus; label: string; action: string; icon: string }[] = [
+    { status: 'recovering', label: '开始回收', action: '开始回收存储卡', icon: '📥' },
+    { status: 'backing_up', label: '开始备份', action: '开始进行备份', icon: '📀' },
+    { status: 'backed_up', label: '备份完成', action: '标记备份完成', icon: '✅' },
+    { status: 'handed_over', label: '确认交接', action: '确认交接完成', icon: '🤝' },
+    { status: 'editing', label: '进入待剪辑', action: '标记为待剪辑状态', icon: '🎬' },
+    { status: 'completed', label: '标记完成', action: '标记项目完成', icon: '🏆' },
+    { status: 'anomaly', label: '标记异常', action: '标记为异常状态', icon: '⚠️' },
   ];
 
   if (notFound.value) {
@@ -189,128 +226,196 @@ export default component$(() => {
             </div>
           </header>
 
-          <main class="max-w-6xl mx-auto px-6 py-8">
-            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              <div class="lg:col-span-1 space-y-6">
-                <div class="card-base">
-                  <h3 class="text-lg font-display font-semibold text-gray-700 mb-4">项目信息</h3>
-                  <div class="space-y-3 text-sm">
-                    <div class="flex justify-between">
-                      <span class="text-gray-500">项目编号</span>
-                      <span class="font-medium text-gray-800">{p.projectNumber}</span>
-                    </div>
-                    <div class="flex justify-between">
-                      <span class="text-gray-500">新人姓名</span>
-                      <span class="font-medium text-gray-800">{p.coupleName}</span>
-                    </div>
-                    <div class="flex justify-between">
-                      <span class="text-gray-500">婚礼日期</span>
-                      <span class="font-medium text-gray-800">{formatDate(p.weddingDate)}</span>
-                    </div>
-                    <div class="flex justify-between">
-                      <span class="text-gray-500">摄影师</span>
-                      <span class="font-medium text-gray-800">{p.photographer || '未安排'}</span>
-                    </div>
-                    <div class="flex justify-between">
-                      <span class="text-gray-500">摄像师</span>
-                      <span class="font-medium text-gray-800">{p.videographer || '未安排'}</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div class="card-base">
-                  <h3 class="text-lg font-display font-semibold text-gray-700 mb-4">进度概览</h3>
-                  <div class="space-y-4">
-                    <div>
-                      <div class="flex justify-between text-sm mb-1.5">
-                        <span class="text-gray-500">存储卡回收</span>
-                        <span class="font-medium">{p.recoveredCount} / {p.cardCount}</span>
-                      </div>
-                      <div class="h-2 bg-gray-100 rounded-full overflow-hidden">
-                        <div
-                          class="h-full bg-blue-500 rounded-full transition-all duration-500"
-                          style={{ width: `${recoveryProgress}%` }}
-                        />
-                      </div>
-                    </div>
-                    <div>
-                      <div class="flex justify-between text-sm mb-1.5">
-                        <span class="text-gray-500">备份进度</span>
-                        <span class="font-medium">{p.backupCount} / {p.cardCount}</span>
-                      </div>
-                      <div class="h-2 bg-gray-100 rounded-full overflow-hidden">
-                        <div
-                          class="h-full bg-champagne-500 rounded-full transition-all duration-500"
-                          style={{ width: `${backupProgress}%` }}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div class="card-base">
-                  <h3 class="text-lg font-display font-semibold text-gray-700 mb-4">快速操作</h3>
-                  <div class="space-y-2">
-                    {availableStatuses
-                      .filter((s) => s.status !== p.handoverStatus)
-                      .map((item) => (
-                        <button
-                          key={item.status}
-                          onClick$={() => openStatusModal(item.status)}
-                          class="w-full text-left px-4 py-2.5 rounded-xl text-sm hover:bg-champagne-50 transition-colors text-gray-700 hover:text-champagne-700"
-                        >
-                          {item.action}
-                        </button>
-                      ))}
-                  </div>
-                </div>
-
-                <div class="card-base">
-                  <h3 class="text-lg font-display font-semibold text-gray-700 mb-4">状态时间线</h3>
-                  <StatusTimeline logs={statusLogs.value} />
-                </div>
-              </div>
-
-              <div class="lg:col-span-2 space-y-6">
-                <StorageCardList
-                  projectId={projectId}
-                  project={p}
-                  onUpdate$={handleUpdate}
-                />
-
-                <BackupStatus
-                  projectId={projectId}
-                  project={p}
-                  onUpdate$={handleUpdate}
-                />
-
-                <MissingItems projectId={projectId} />
-
-                {p.handoverStatus === 'anomaly' && p.anomalyNote && (
-                  <div class="card-base bg-wine-50 border-wine-200">
-                    <h3 class="text-lg font-display font-semibold text-wine-700 mb-3 flex items-center gap-2">
-                      <span>⚠️</span>
-                      异常说明
-                    </h3>
-                    <p class="text-wine-600">{p.anomalyNote}</p>
-                  </div>
-                )}
-
-                <div class="card-base">
-                  <h3 class="text-lg font-display font-semibold text-gray-700 mb-3">时间信息</h3>
-                  <div class="flex gap-8 text-sm text-gray-500">
-                    <div>
-                      <span class="text-gray-400">创建时间：</span>
-                      <span>{formatDateTime(p.createdAt)}</span>
-                    </div>
-                    <div>
-                      <span class="text-gray-400">更新时间：</span>
-                      <span>{formatDateTime(p.updatedAt)}</span>
-                    </div>
-                  </div>
-                </div>
+          <div class="bg-white border-b border-gray-100 sticky top-16 z-40">
+            <div class="max-w-6xl mx-auto px-6">
+              <div class="flex gap-1 overflow-x-auto py-2">
+                {TABS.map((tab) => (
+                  <button
+                    key={tab.key}
+                    onClick$={() => (activeTab.value = tab.key)}
+                    class={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium whitespace-nowrap transition-all duration-200 ${
+                      activeTab.value === tab.key
+                        ? 'bg-champagne-100 text-champagne-700'
+                        : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'
+                    }`}
+                  >
+                    <span>{tab.icon}</span>
+                    <span>{tab.label}</span>
+                  </button>
+                ))}
               </div>
             </div>
+          </div>
+
+          <main class="max-w-6xl mx-auto px-6 py-8">
+            {activeTab.value === 'overview' && (
+              <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div class="lg:col-span-1 space-y-6">
+                  <div class="card-base">
+                    <h3 class="text-lg font-display font-semibold text-gray-700 mb-4">项目信息</h3>
+                    <div class="space-y-3 text-sm">
+                      <div class="flex justify-between">
+                        <span class="text-gray-500">项目编号</span>
+                        <span class="font-medium text-gray-800">{p.projectNumber}</span>
+                      </div>
+                      <div class="flex justify-between">
+                        <span class="text-gray-500">新人姓名</span>
+                        <span class="font-medium text-gray-800">{p.coupleName}</span>
+                      </div>
+                      <div class="flex justify-between">
+                        <span class="text-gray-500">婚礼日期</span>
+                        <span class="font-medium text-gray-800">{formatDate(p.weddingDate)}</span>
+                      </div>
+                      <div class="flex justify-between">
+                        <span class="text-gray-500">摄影师</span>
+                        <span class="font-medium text-gray-800">{p.photographer || '未安排'}</span>
+                      </div>
+                      <div class="flex justify-between">
+                        <span class="text-gray-500">摄像师</span>
+                        <span class="font-medium text-gray-800">{p.videographer || '未安排'}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="card-base">
+                    <h3 class="text-lg font-display font-semibold text-gray-700 mb-4">进度概览</h3>
+                    <div class="space-y-4">
+                      <div>
+                        <div class="flex justify-between text-sm mb-1.5">
+                          <span class="text-gray-500">存储卡回收</span>
+                          <span class="font-medium">{p.recoveredCount} / {p.cardCount}</span>
+                        </div>
+                        <div class="h-2 bg-gray-100 rounded-full overflow-hidden">
+                          <div
+                            class="h-full bg-blue-500 rounded-full transition-all duration-500"
+                            style={{ width: `${recoveryProgress}%` }}
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <div class="flex justify-between text-sm mb-1.5">
+                          <span class="text-gray-500">备份进度</span>
+                          <span class="font-medium">{p.backupCount} / {p.cardCount}</span>
+                        </div>
+                        <div class="h-2 bg-gray-100 rounded-full overflow-hidden">
+                          <div
+                            class="h-full bg-champagne-500 rounded-full transition-all duration-500"
+                            style={{ width: `${backupProgress}%` }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="card-base">
+                    <h3 class="text-lg font-display font-semibold text-gray-700 mb-4">快速操作</h3>
+                    <div class="space-y-2">
+                      {availableStatuses
+                        .filter((s) => s.status !== p.handoverStatus)
+                        .map((item) => (
+                          <button
+                            key={item.status}
+                            onClick$={() => openStatusModal(item.status)}
+                            class="w-full text-left px-4 py-2.5 rounded-xl text-sm hover:bg-champagne-50 transition-colors text-gray-700 hover:text-champagne-700 flex items-center gap-3"
+                          >
+                            <span class="text-base">{item.icon}</span>
+                            <span>{item.action}</span>
+                          </button>
+                        ))}
+                    </div>
+                  </div>
+                </div>
+
+                <div class="lg:col-span-2 space-y-6">
+                  <div class="card-base">
+                    <div class="flex items-center justify-between mb-4">
+                      <h3 class="text-lg font-display font-semibold text-gray-700 flex items-center gap-2">
+                        <span class="w-1 h-6 bg-champagne-500 rounded-full" />
+                        最近操作记录
+                      </h3>
+                      <button
+                        onClick$={() => (activeTab.value = 'timeline')}
+                        class="text-sm text-champagne-600 hover:text-champagne-700 transition-colors"
+                      >
+                        查看全部 →
+                      </button>
+                    </div>
+                    <StatusTimeline logs={activityLogs.value.slice(0, 5)} />
+                  </div>
+
+                  {p.handoverStatus === 'anomaly' && p.anomalyNote && (
+                    <div class="card-base bg-wine-50 border-wine-200">
+                      <h3 class="text-lg font-display font-semibold text-wine-700 mb-3 flex items-center gap-2">
+                        <span>⚠️</span>
+                        异常说明
+                      </h3>
+                      <p class="text-wine-600">{p.anomalyNote}</p>
+                    </div>
+                  )}
+
+                  <div class="card-base">
+                    <h3 class="text-lg font-display font-semibold text-gray-700 mb-3">时间信息</h3>
+                    <div class="flex gap-8 text-sm text-gray-500 flex-wrap">
+                      <div>
+                        <span class="text-gray-400">创建时间：</span>
+                        <span>{formatDateTime(p.createdAt)}</span>
+                      </div>
+                      <div>
+                        <span class="text-gray-400">更新时间：</span>
+                        <span>{formatDateTime(p.updatedAt)}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {activeTab.value === 'cards' && (
+              <StorageCardList
+                projectId={projectId}
+                project={p}
+                onUpdate$={handleUpdate}
+              />
+            )}
+
+            {activeTab.value === 'backup' && (
+              <BackupStatus
+                projectId={projectId}
+                project={p}
+                onUpdate$={handleUpdate}
+              />
+            )}
+
+            {activeTab.value === 'timeline' && (
+              <div class="card-base">
+                <div class="flex items-center justify-between mb-6">
+                  <h3 class="text-lg font-display font-semibold text-gray-700 flex items-center gap-2">
+                    <span class="w-1 h-6 bg-champagne-500 rounded-full" />
+                    完整时间线
+                    <span class="text-sm font-normal text-gray-400">
+                      (共 {activityLogs.value.length} 条记录)
+                    </span>
+                  </h3>
+                  <div class="flex items-center gap-2">
+                    <span class={`badge-base ${HANDOVER_STATUS_COLORS[p.handoverStatus]}`}>
+                      当前状态：{HANDOVER_STATUS_LABELS[p.handoverStatus]}
+                    </span>
+                  </div>
+                </div>
+                <StatusTimeline logs={activityLogs.value} />
+              </div>
+            )}
+
+            {activeTab.value === 'notes' && (
+              <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div>
+                  <HandoverNote projectId={projectId} project={p} onUpdate$={handleUpdate} />
+                </div>
+                <div>
+                  <MissingItems projectId={projectId} />
+                </div>
+              </div>
+            )}
           </main>
 
           {showStatusModal.value && (

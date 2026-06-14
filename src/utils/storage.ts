@@ -4,6 +4,8 @@ import type {
   BackupRecord,
   MissingItem,
   StatusLog,
+  ActivityLog,
+  ActivityType,
 } from '~/types/project';
 
 const STORAGE_KEYS = {
@@ -12,6 +14,7 @@ const STORAGE_KEYS = {
   backups: 'wedding_backups',
   missings: 'wedding_missings',
   statusLogs: 'wedding_status_logs',
+  activityLogs: 'wedding_activity_logs',
 };
 
 function safeGet<T>(key: string, defaultValue: T): T {
@@ -108,6 +111,8 @@ export const cardStorage = {
     const newCard: StorageCard = {
       ...card,
       id: generateId(),
+      deviceType: card.deviceType || 'camera',
+      deviceName: card.deviceName || '',
     };
     cards.push(newCard);
     safeSet(STORAGE_KEYS.cards, cards);
@@ -179,6 +184,10 @@ export const backupStorage = {
     const newBackup: BackupRecord = {
       ...backup,
       id: generateId(),
+      locationType: backup.locationType || 'other',
+      startedAt: backup.startedAt ?? null,
+      verifyStatus: backup.verifyStatus || 'pending',
+      verifiedAt: backup.verifiedAt ?? null,
     };
     backups.push(newBackup);
     safeSet(STORAGE_KEYS.backups, backups);
@@ -309,3 +318,49 @@ export const statusLogStorage = {
     safeSet(STORAGE_KEYS.statusLogs, filtered);
   },
 };
+
+export const activityLogStorage = {
+  getAll(): ActivityLog[] {
+    return safeGet<ActivityLog[]>(STORAGE_KEYS.activityLogs, []);
+  },
+
+  getByProjectId(projectId: string): ActivityLog[] {
+    return this.getAll()
+      .filter((l) => l.projectId === projectId)
+      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+  },
+
+  create(log: Omit<ActivityLog, 'id'>): ActivityLog {
+    const logs = this.getAll();
+    const newLog: ActivityLog = {
+      ...log,
+      id: generateId(),
+    };
+    logs.push(newLog);
+    safeSet(STORAGE_KEYS.activityLogs, logs);
+    return newLog;
+  },
+
+  deleteByProjectId(projectId: string): void {
+    const logs = this.getAll();
+    const filtered = logs.filter((l) => l.projectId !== projectId);
+    safeSet(STORAGE_KEYS.activityLogs, filtered);
+  },
+};
+
+export function logActivity(
+  projectId: string,
+  type: ActivityType,
+  description: string,
+  details?: Record<string, unknown>,
+  operator?: string
+): ActivityLog {
+  return activityLogStorage.create({
+    projectId,
+    type,
+    description,
+    details,
+    timestamp: new Date().toISOString(),
+    operator,
+  });
+}
